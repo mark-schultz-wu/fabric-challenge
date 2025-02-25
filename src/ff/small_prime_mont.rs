@@ -107,57 +107,117 @@ impl<const P: u32> MontgomeryFp<P> {
 
         result
     }
+    /// Negation in-place
+    pub fn neg_inplace(&mut self) {
+        self.0 = MontgomeryFp::<P>::const_sub(P, self.0, !self.is_zero());
+    }
+}
+
+// Add implementations
+impl<'a, const P: u32> AddAssign<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
+    fn add_assign(&mut self, other: &'a Self) {
+        let sum = self.0 + other.0;
+        self.0 = Self::const_sub(sum, P, sum >= P);
+    }
+}
+
+impl<const P: u32> AddAssign for MontgomeryFp<P> {
+    fn add_assign(&mut self, other: Self) {
+        *self += &other;
+    }
 }
 
 impl<const P: u32> Add for MontgomeryFp<P> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let mut output = self;
-        output += other;
-        output
+        let mut result = self;
+        result += &other;
+        result
     }
 }
 
-impl<const P: u32> AddAssign for MontgomeryFp<P> {
-    fn add_assign(&mut self, other: Self) {
-        let sum = self.0 + other.0;
-        self.0 = Self::const_sub(sum, P, sum >= P);
+impl<'a, const P: u32> Add<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
+    type Output = Self;
+
+    fn add(self, other: &'a Self) -> Self {
+        let mut result = self;
+        result += other;
+        result
+    }
+}
+
+impl<const P: u32> Neg for &mut MontgomeryFp<P> {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        self.neg_inplace();
+        self
+    }
+}
+
+#[allow(clippy::suspicious_op_assign_impl)]
+impl<'a, const P: u32> SubAssign<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
+    fn sub_assign(&mut self, other: &'a Self) {
+        // Use negation to implement subtraction
+        // a - b = a + (-b) = -((-a) + b).
+        // Two negations so we do not consume b
+        self.neg_inplace();
+        *self += other;
+        self.neg_inplace();
+    }
+}
+
+impl<const P: u32> SubAssign for MontgomeryFp<P> {
+    fn sub_assign(&mut self, other: Self) {
+        *self -= &other;
+    }
+}
+
+impl<'a, const P: u32> Sub<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
+    type Output = Self;
+    fn sub(self, rhs: &'a Self) -> Self::Output {
+        let mut output = self;
+        output -= rhs;
+        output
     }
 }
 
 impl<const P: u32> Sub for MontgomeryFp<P> {
     type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        let mut output = self;
-        output -= other;
-        output
+    #[allow(clippy::op_ref)]
+    fn sub(self, rhs: Self) -> Self::Output {
+        self - &rhs
     }
 }
 
-#[allow(clippy::suspicious_op_assign_impl)]
-impl<const P: u32> SubAssign for MontgomeryFp<P> {
-    fn sub_assign(&mut self, other: Self) {
-        // Use negation to implement subtraction
-        // a - b = a + (-b)
-        *self += -other;
+impl<'a, const P: u32> MulAssign<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
+    fn mul_assign(&mut self, other: &'a Self) {
+        self.0 = Self::montgomery_multiply(self.0, other.0);
     }
 }
 
-impl<const P: u32> Mul for MontgomeryFp<P> {
+impl<const P: u32> MulAssign for MontgomeryFp<P> {
+    fn mul_assign(&mut self, other: Self) {
+        *self *= &other;
+    }
+}
+
+impl<'a, const P: u32> Mul<&'a MontgomeryFp<P>> for MontgomeryFp<P> {
     type Output = Self;
 
-    fn mul(self, other: Self) -> Self {
+    fn mul(self, other: &'a Self) -> Self {
         let mut output = self;
         output *= other;
         output
     }
 }
 
-impl<const P: u32> MulAssign for MontgomeryFp<P> {
-    fn mul_assign(&mut self, other: Self) {
-        self.0 = Self::montgomery_multiply(self.0, other.0);
+impl<const P: u32> Mul for MontgomeryFp<P> {
+    type Output = Self;
+
+    #[allow(clippy::op_ref)]
+    fn mul(self, other: Self) -> Self {
+        self * &other
     }
 }
 
