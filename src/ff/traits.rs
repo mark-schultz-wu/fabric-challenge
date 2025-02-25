@@ -1,7 +1,6 @@
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A finite field, supporting arbitrary field operations
-#[allow(dead_code)]
 pub trait Field:
     Sized
     + Clone
