@@ -7,16 +7,36 @@ use super::traits::UnivariatePolynomial;
 pub struct UnivariatePoly<F: Field>(Vec<F>);
 
 impl<F: Field> UnivariatePolynomial<F> for UnivariatePoly<F> {
+    fn new(input: &[F]) -> Self {
+        let mut last_nonzero = None;
+        for (i, item) in input.iter().enumerate().rev() {
+            if *item != F::zero() {
+                last_nonzero = Some(i);
+                break;
+            }
+        }
+        let vec = match last_nonzero {
+            Some(i) => input[0..=i].to_vec(),
+            None => Vec::new(), // Slice is all 0, return the empty vector
+        };
+        Self(vec)
+    }
+
     fn coefficients(&self) -> Vec<F> {
         self.0.clone()
     }
-    fn degree(&self) -> isize {
-        // Note: degree of the 0 polynomial is -1.
-        self.0.len() as isize - 1
+    /// Degree of a polynomial.
+    ///
+    /// Note: degree of the zero polynomial is None
+    fn degree(&self) -> Option<usize> {
+        if self.0.is_empty() {
+            None
+        } else {
+            Some(self.0.len() - 1)
+        }
     }
 
     /// Evaluation via Horner's method.
-    ///
     fn evaluate(&self, point: &F) -> F {
         // Handle empty polynomial case
         if self.0.is_empty() {
@@ -26,10 +46,8 @@ impl<F: Field> UnivariatePolynomial<F> for UnivariatePoly<F> {
         // Start with the highest degree coefficient
         let mut result = self.0.last().unwrap().clone();
 
-        // Apply Horner's method, iterating through coefficients in reverse
-        // (from second-highest degree to constant term)
+        // Apply Horner's method, iterating through coefficients in reverse order
         for coeff in self.0.iter().rev().skip(1) {
-            // result = result * point + coefficient
             result *= point;
             result += coeff;
         }
@@ -46,7 +64,7 @@ mod tests {
     use crate::MontgomeryFp;
 
     fn test_empty_polynomial<const P: u32>() {
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![]);
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[]);
         assert_eq!(
             poly.evaluate(&MontgomeryFp::<P>::new(5)),
             MontgomeryFp::<P>::zero()
@@ -54,7 +72,7 @@ mod tests {
     }
 
     fn test_constant_polynomial<const P: u32>() {
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![MontgomeryFp::<P>::new(7)]);
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[MontgomeryFp::<P>::new(7)]);
         assert_eq!(
             poly.evaluate(&MontgomeryFp::<P>::new(3)),
             MontgomeryFp::<P>::new(7)
@@ -67,7 +85,7 @@ mod tests {
 
     fn test_linear_polynomial<const P: u32>() {
         // Polynomial: 3x + 2
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(2),
             MontgomeryFp::<P>::new(3),
         ]);
@@ -87,7 +105,7 @@ mod tests {
 
     fn test_quadratic_polynomial<const P: u32>() {
         // Polynomial: 2x^2 + 3x + 1
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(1),
             MontgomeryFp::<P>::new(3),
             MontgomeryFp::<P>::new(2),
@@ -101,14 +119,14 @@ mod tests {
 
     fn test_higher_degree_polynomial<const P: u32>() {
         // Polynomial: 3x^3 + 2x^2 + 5x + 1
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(1),
             MontgomeryFp::<P>::new(5),
             MontgomeryFp::<P>::new(2),
             MontgomeryFp::<P>::new(3),
         ]);
 
-        // Test using Horner's method for consistency with the implementation
+        // Test at x = 2
         let x = 2;
         // expected is 3*8 + 2*4 + 5*2 + 1 = 24 + 8 + 10 + 1 = 43
         let expected = MontgomeryFp::<P>::new(43);
@@ -118,23 +136,23 @@ mod tests {
 
     fn test_degree<const P: u32>() {
         // Test polynomial degrees
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(1),
             MontgomeryFp::<P>::new(2),
             MontgomeryFp::<P>::new(3),
         ]); // 3x^2 + 2x + 1
-        assert_eq!(poly.degree(), 2);
+        assert_eq!(poly.degree(), Some(2));
 
-        let constant = UnivariatePoly::<MontgomeryFp<P>>(vec![MontgomeryFp::<P>::new(5)]); // 5
-        assert_eq!(constant.degree(), 0);
+        let constant = UnivariatePoly::<MontgomeryFp<P>>::new(&[MontgomeryFp::<P>::new(5)]); // 5
+        assert_eq!(constant.degree(), Some(0));
 
-        let empty = UnivariatePoly::<MontgomeryFp<P>>(vec![]);
-        assert_eq!(empty.degree(), -1);
+        let empty = UnivariatePoly::<MontgomeryFp<P>>::new(&[]);
+        assert_eq!(empty.degree(), None);
     }
 
     fn test_evaluate_at_large_point<const P: u32>() {
         // Polynomial: 4x^2 + 2x + 9
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(9),
             MontgomeryFp::<P>::new(2),
             MontgomeryFp::<P>::new(4),
@@ -150,7 +168,7 @@ mod tests {
 
     fn test_zero_polynomial<const P: u32>() {
         // Polynomial: 0x^2 + 0x + 0
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(0),
             MontgomeryFp::<P>::new(0),
             MontgomeryFp::<P>::new(0),
@@ -165,11 +183,14 @@ mod tests {
             poly.evaluate(&MontgomeryFp::<P>::new(7)),
             MontgomeryFp::<P>::new(0)
         );
+
+        // A polynomial with all zeros should be reduced to empty
+        assert_eq!(poly.degree(), None);
     }
 
     fn test_monic_polynomial<const P: u32>() {
         // Monic polynomial: 1x^3 + 0x^2 + 0x + 0 (just x^3)
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(0),
             MontgomeryFp::<P>::new(0),
             MontgomeryFp::<P>::new(0),
@@ -178,18 +199,14 @@ mod tests {
 
         // Test at x = 2: 2^3 = 8
         let x = 2;
-        let expected = (x * x * x) % P;
-        assert_eq!(
-            poly.evaluate(&MontgomeryFp::<P>::new(x)),
-            MontgomeryFp::<P>::new(expected)
-        );
+        let expected = MontgomeryFp::<P>::new(8);
+        assert_eq!(poly.evaluate(&MontgomeryFp::<P>::new(x)), expected);
 
         // Test at a larger value
         let x = 123;
-        let expected = ((x as u64 * x as u64) % P as u64 * x as u64) % P as u64;
         assert_eq!(
             poly.evaluate(&MontgomeryFp::<P>::new(x)),
-            MontgomeryFp::<P>::new(expected as u32)
+            MontgomeryFp::<P>::new(x.pow(3))
         );
     }
 
@@ -201,8 +218,8 @@ mod tests {
 
         // Polynomial: x - a
         // Coefficients: [-a, 1]
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
-            MontgomeryFp::<P>::new(P - a), // This is -a in the field
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
+            MontgomeryFp::<P>::new(P - a),
             MontgomeryFp::<P>::new(1),
         ]);
 
@@ -214,14 +231,14 @@ mod tests {
 
         // And non-zero elsewhere
         assert_ne!(
-            poly.evaluate(&MontgomeryFp::<P>::new((a + 1) % P)),
+            poly.evaluate(&MontgomeryFp::<P>::new(a + 1)),
             MontgomeryFp::<P>::zero()
         );
     }
 
     fn test_leading_zero_coefficients<const P: u32>() {
-        // Polynomial with leading zero coefficients
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        // Polynomial with trailing zero coefficients
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(5),
             MontgomeryFp::<P>::new(3),
             MontgomeryFp::<P>::new(0),
@@ -230,20 +247,22 @@ mod tests {
 
         // p(2) should be 3*2 + 5 = 11 in any case
         let x = 2;
-        let expected = (3 * x + 5) % P;
         assert_eq!(
             poly.evaluate(&MontgomeryFp::<P>::new(x)),
-            MontgomeryFp::<P>::new(expected)
+            MontgomeryFp::<P>::new(11)
         );
 
-        // Degree check - this depends on the implementation's handling of leading zeros
-        assert_eq!(poly.degree(), 3); // Assuming no stripping of leading zeros
+        // Degree check - the constructor should strip trailing zeros
+        assert_eq!(poly.degree(), Some(1));
+
+        // Check that the internal representation only has the necessary coefficients
+        assert_eq!(poly.coefficients().len(), 2);
     }
 
     fn test_large_coefficients<const P: u32>() {
         // Polynomial with coefficients close to the field size
         // (P-1)x^2 + (P-2)x + (P-3)
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+        let poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(P - 3),
             MontgomeryFp::<P>::new(P - 2),
             MontgomeryFp::<P>::new(P - 1),
@@ -260,32 +279,32 @@ mod tests {
         );
     }
 
-    fn test_interpolation<const P: u32>() {
-        // Test polynomial that passes through specific points
-        // For 3 points, we need a degree 2 polynomial
-
-        // Let's create a polynomial that passes through:
-        // (1, 5), (2, 12), (3, 23)
-        // This is the quadratic polynomial: 2x^2 + x + 2
-
-        let poly = UnivariatePoly::<MontgomeryFp<P>>(vec![
+    fn test_trailing_zeros_constructor<const P: u32>() {
+        // Test that constructor correctly strips trailing zeros
+        let poly1 = UnivariatePoly::<MontgomeryFp<P>>::new(&[
+            MontgomeryFp::<P>::new(1),
             MontgomeryFp::<P>::new(2),
+            MontgomeryFp::<P>::new(0),
+            MontgomeryFp::<P>::new(0),
+        ]);
+
+        let poly2 = UnivariatePoly::<MontgomeryFp<P>>::new(&[
             MontgomeryFp::<P>::new(1),
             MontgomeryFp::<P>::new(2),
         ]);
 
-        assert_eq!(
-            poly.evaluate(&MontgomeryFp::<P>::new(1)),
-            MontgomeryFp::<P>::new(5)
-        ); // 2*1^2 + 1*1 + 2 = 5
-        assert_eq!(
-            poly.evaluate(&MontgomeryFp::<P>::new(2)),
-            MontgomeryFp::<P>::new(12)
-        ); // 2*2^2 + 1*2 + 2 = 12
-        assert_eq!(
-            poly.evaluate(&MontgomeryFp::<P>::new(3)),
-            MontgomeryFp::<P>::new(23)
-        ); // 2*3^2 + 1*3 + 2 = 23
+        // Both should have the same coefficients after construction
+        assert_eq!(poly1.coefficients(), poly2.coefficients());
+        assert_eq!(poly1.degree(), Some(1));
+
+        // All zeros should create an empty polynomial
+        let zero_poly = UnivariatePoly::<MontgomeryFp<P>>::new(&[
+            MontgomeryFp::<P>::new(0),
+            MontgomeryFp::<P>::new(0),
+        ]);
+
+        assert_eq!(zero_poly.coefficients(), &[]);
+        assert_eq!(zero_poly.degree(), None);
     }
 
     // Tests for small prime
@@ -350,8 +369,8 @@ mod tests {
     }
 
     #[test]
-    fn small_prime_interpolation() {
-        test_interpolation::<SMALL_PRIME>();
+    fn small_prime_trailing_zeros_constructor() {
+        test_trailing_zeros_constructor::<SMALL_PRIME>();
     }
 
     // Tests for large prime
@@ -416,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn large_prime_interpolation() {
-        test_interpolation::<LARGE_PRIME>();
+    fn large_prime_trailing_zeros_constructor() {
+        test_trailing_zeros_constructor::<LARGE_PRIME>();
     }
 }

@@ -32,9 +32,11 @@ pub trait MultivariatePolynomial<F: Field> {
 #[allow(dead_code)]
 /// A univariate polynomial over a finite field.
 pub trait UnivariatePolynomial<F: Field> {
+    fn new(input: &[F]) -> Self;
     /// Returns the degree of this polynomial.
-    /// degree of the zero polynomial is -1
-    fn degree(&self) -> isize;
+    ///
+    /// Note: Degree of the 0 polynomial is `None`
+    fn degree(&self) -> Option<usize>;
 
     /// Evaluates the polynomial at the given point.
     fn evaluate(&self, point: &F) -> F;
