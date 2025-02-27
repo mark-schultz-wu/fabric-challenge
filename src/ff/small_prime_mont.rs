@@ -3,6 +3,7 @@
 
 use crate::ff::traits::Field;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::convert::From;
 use std::ops::Div;
 
 /// Computes -a^(-1) mod 2^32 using the Newton-Raphson method
@@ -31,6 +32,40 @@ impl<const P: u32> Field for MontgomeryFp<P> {
     fn one() -> Self {
         Self(Self::R)
     }
+    /// Exponentiation by squaring
+    fn pow(&self, exp: u32) -> Self {
+        let mut result = Self::one();
+        let mut base = *self;
+        let mut e = exp;
+
+        while e > 0 {
+            if e & 1 == 1 {
+                result *= base;
+            }
+            base *= base;
+            e >>= 1;
+        }
+
+        result
+    }
+    /// Checking if zero
+    fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// Convert from Standard Representation to Montgomery Representation
+impl<const P: u32> From<u32> for MontgomeryFp<P> {
+    fn from(value: u32) -> Self {
+        Self(Self::montgomery_multiply(value % P, Self::R_SQUARED))
+    }
+}
+
+/// Convert from Montgomery Representation to Standard Representation
+impl<const P: u32> From<MontgomeryFp<P>> for u32 {
+    fn from(value: MontgomeryFp<P>) -> Self {
+        MontgomeryFp::<P>::montgomery_multiply(value.0, 1)
+    }
 }
 
 #[allow(dead_code)]
@@ -45,16 +80,6 @@ impl<const P: u32> MontgomeryFp<P> {
     const fn const_sub(a: u32, b: u32, condition: bool) -> u32 {
         let mask = if condition { u32::MAX } else { 0 };
         a.wrapping_sub(b & mask)
-    }
-
-    /// Convert from standard to Montgomery representation
-    pub fn from_u32(a: u32) -> Self {
-        Self(Self::montgomery_multiply(a % P, Self::R_SQUARED))
-    }
-
-    /// Convert from Montgomery to standard representation
-    pub fn to_u32(self) -> u32 {
-        Self::montgomery_multiply(self.0, 1)
     }
 
     /// Montgomery multiplication
@@ -91,22 +116,6 @@ impl<const P: u32> MontgomeryFp<P> {
         }
     }
 
-    /// Exponentiation by squaring
-    pub fn pow(&self, exp: u32) -> Self {
-        let mut result = Self::one();
-        let mut base = *self;
-        let mut e = exp;
-
-        while e > 0 {
-            if e & 1 == 1 {
-                result *= base;
-            }
-            base *= base;
-            e >>= 1;
-        }
-
-        result
-    }
     /// Negation in-place
     pub fn neg_inplace(&mut self) {
         self.0 = MontgomeryFp::<P>::const_sub(P, self.0, !self.is_zero());
@@ -250,10 +259,10 @@ mod exhaustive_tests {
     fn exhaustive_test_add<const P: u32>() {
         for x in 0..P {
             for y in 0..P {
-                let x_fp = MontgomeryFp::<P>::from_u32(x);
-                let y_fp = MontgomeryFp::<P>::from_u32(y);
+                let x_fp = MontgomeryFp::<P>::from(x);
+                let y_fp = MontgomeryFp::<P>::from(y);
                 let corr_x_plus_y = (x + y) % P;
-                let our_x_plus_y = (x_fp + y_fp).to_u32();
+                let our_x_plus_y = (x_fp + y_fp).into();
                 assert_eq!(corr_x_plus_y, our_x_plus_y);
             }
         }
@@ -262,10 +271,10 @@ mod exhaustive_tests {
     fn exhaustive_test_sub<const P: u32>() {
         for x in 0..P {
             for y in 0..P {
-                let x_fp = MontgomeryFp::<P>::from_u32(x);
-                let y_fp = MontgomeryFp::<P>::from_u32(y);
+                let x_fp = MontgomeryFp::<P>::from(x);
+                let y_fp = MontgomeryFp::<P>::from(y);
                 let corr_x_minus_y = (x + (P - y)) % P;
-                let our_x_minus_y = (x_fp - y_fp).to_u32();
+                let our_x_minus_y = (x_fp - y_fp).into();
                 assert_eq!(corr_x_minus_y, our_x_minus_y);
             }
         }
@@ -273,9 +282,9 @@ mod exhaustive_tests {
 
     fn exhaustive_test_neg<const P: u32>() {
         for x in 0..P {
-            let x_fp = MontgomeryFp::<P>::from_u32(x);
+            let x_fp = MontgomeryFp::<P>::from(x);
             let corr_x_neg = (P - x) % P;
-            let our_x_neg = x_fp.neg().to_u32();
+            let our_x_neg = x_fp.neg().into();
             assert_eq!(corr_x_neg, our_x_neg);
         }
     }
@@ -283,30 +292,30 @@ mod exhaustive_tests {
     fn exhaustive_test_mul<const P: u32>() {
         for x in 0..P {
             for y in 0..P {
-                let x_fp = MontgomeryFp::<P>::from_u32(x);
-                let y_fp = MontgomeryFp::<P>::from_u32(y);
+                let x_fp = MontgomeryFp::<P>::from(x);
+                let y_fp = MontgomeryFp::<P>::from(y);
                 let corr_x_mul_y = (((x as u64) * (y as u64)) % (P as u64)) as u32;
-                let our_x_mul_y = (x_fp * y_fp).to_u32();
+                let our_x_mul_y = (x_fp * y_fp).into();
                 assert_eq!(corr_x_mul_y, our_x_mul_y);
             }
         }
     }
 
     fn exhaustive_test_inv<const P: u32>() {
-        assert_eq!(MontgomeryFp::<P>::from_u32(0).inv(), None);
+        assert_eq!(MontgomeryFp::<P>::from(0).inv(), None);
         for x in 1..P {
-            let x_fp = MontgomeryFp::<P>::from_u32(x);
+            let x_fp = MontgomeryFp::<P>::from(x);
             let x_fp_inv = x_fp.inv().unwrap();
-            let one = x_fp * x_fp_inv;
-            assert_eq!(one.to_u32(), 1);
+            let one: u32 = (x_fp * x_fp_inv).into();
+            assert_eq!(one, 1);
         }
     }
 
     fn exhaustive_test_div<const P: u32>() {
         for x in 0..P {
             for y in 1..P {
-                let x_fp = MontgomeryFp::<P>::from_u32(x);
-                let y_fp = MontgomeryFp::<P>::from_u32(y);
+                let x_fp = MontgomeryFp::<P>::from(x);
+                let y_fp = MontgomeryFp::<P>::from(y);
                 let our_x_div_y = (x_fp / y_fp).unwrap();
                 let possible_x_fp = our_x_div_y * y_fp;
                 assert_eq!(possible_x_fp, x_fp);
@@ -326,13 +335,8 @@ mod exhaustive_tests {
         );
 
         // Verify one() returns correct Montgomery form
-        let one = MontgomeryFp::<P>::one();
-        assert_eq!(
-            one.to_u32(),
-            1,
-            "one() doesn't convert back to 1 for prime {}",
-            P
-        );
+        let one: u32 = MontgomeryFp::<P>::one().into();
+        assert_eq!(one, 1, "one() doesn't convert back to 1 for prime {}", P);
     }
 
     // Small prime tests
@@ -377,23 +381,23 @@ mod exhaustive_tests {
     fn test_div_special_cases<const P: u32>() {
         // Test 0/y = 0
         for y in 1..P {
-            let zero = MontgomeryFp::<P>::from_u32(0);
-            let y_fp = MontgomeryFp::<P>::from_u32(y);
-            let result = (zero / y_fp).unwrap();
-            assert_eq!(result.to_u32(), 0);
+            let zero = MontgomeryFp::<P>::from(0);
+            let y_fp = MontgomeryFp::<P>::from(y);
+            let result: u32 = (zero / y_fp).unwrap().into();
+            assert_eq!(result, 0);
         }
 
         // Test x/1 = x
         for x in 0..P {
-            let x_fp = MontgomeryFp::<P>::from_u32(x);
-            let one = MontgomeryFp::<P>::from_u32(1);
-            let result = (x_fp / one).unwrap();
-            assert_eq!(result.to_u32(), x);
+            let x_fp = MontgomeryFp::<P>::from(x);
+            let one = MontgomeryFp::<P>::from(1);
+            let result: u32 = (x_fp / one).unwrap().into();
+            assert_eq!(result, x);
         }
 
         // Test div by zero returns None
-        let one = MontgomeryFp::<P>::from_u32(1);
-        let zero = MontgomeryFp::<P>::from_u32(0);
+        let one = MontgomeryFp::<P>::from(1);
+        let zero = MontgomeryFp::<P>::from(0);
         assert_eq!(one / zero, None);
     }
     #[test]
@@ -428,11 +432,11 @@ mod exhaustive_tests {
                 } // Skip division by zero
 
                 // Test that a/b * b = a
-                let a = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
-                let b = MontgomeryFp::<PRIME_30BIT>::from_u32(y);
+                let a = MontgomeryFp::<PRIME_30BIT>::from(x);
+                let b = MontgomeryFp::<PRIME_30BIT>::from(y);
 
                 if let Some(div_result) = a / b {
-                    assert_eq!((div_result * b).to_u32(), x);
+                    assert_eq!(div_result * b, x.into());
                 }
             }
         }
@@ -461,10 +465,10 @@ mod large_prime_tests {
     fn targeted_test_add() {
         for &x in &TEST_VALUES {
             for &y in &TEST_VALUES {
-                let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
-                let y_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(y);
+                let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
+                let y_fp = MontgomeryFp::<PRIME_30BIT>::from(y);
                 let corr_x_plus_y = (x + y) % PRIME_30BIT;
-                let our_x_plus_y = (x_fp + y_fp).to_u32();
+                let our_x_plus_y = (x_fp + y_fp).into();
                 assert_eq!(corr_x_plus_y, our_x_plus_y);
             }
         }
@@ -474,10 +478,10 @@ mod large_prime_tests {
     fn targeted_test_sub() {
         for &x in &TEST_VALUES {
             for &y in &TEST_VALUES {
-                let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
-                let y_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(y);
+                let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
+                let y_fp = MontgomeryFp::<PRIME_30BIT>::from(y);
                 let corr_x_minus_y = (x + (PRIME_30BIT - y)) % PRIME_30BIT;
-                let our_x_minus_y = (x_fp - y_fp).to_u32();
+                let our_x_minus_y = (x_fp - y_fp).into();
                 assert_eq!(corr_x_minus_y, our_x_minus_y);
             }
         }
@@ -486,9 +490,9 @@ mod large_prime_tests {
     #[test]
     fn targeted_test_neg() {
         for &x in &TEST_VALUES {
-            let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
+            let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
             let corr_x_neg = (PRIME_30BIT - x) % PRIME_30BIT;
-            let our_x_neg = x_fp.neg().to_u32();
+            let our_x_neg = x_fp.neg().into();
             assert_eq!(corr_x_neg, our_x_neg);
         }
     }
@@ -497,10 +501,10 @@ mod large_prime_tests {
     fn targeted_test_mul() {
         for &x in &TEST_VALUES {
             for &y in &TEST_VALUES {
-                let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
-                let y_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(y);
+                let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
+                let y_fp = MontgomeryFp::<PRIME_30BIT>::from(y);
                 let corr_x_mul_y = (((x as u64) * (y as u64)) % (PRIME_30BIT as u64)) as u32;
-                let our_x_mul_y = (x_fp * y_fp).to_u32();
+                let our_x_mul_y = (x_fp * y_fp).into();
                 assert_eq!(corr_x_mul_y, our_x_mul_y);
             }
         }
@@ -508,12 +512,12 @@ mod large_prime_tests {
 
     #[test]
     fn targeted_test_inv() {
-        assert_eq!(MontgomeryFp::<PRIME_30BIT>::from_u32(0).inv(), None);
+        assert_eq!(MontgomeryFp::<PRIME_30BIT>::from(0).inv(), None);
         for &x in TEST_VALUES.iter().skip(1) {
-            let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
+            let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
             let x_fp_inv = x_fp.inv().unwrap();
             let one = x_fp * x_fp_inv;
-            assert_eq!(one.to_u32(), 1);
+            assert_eq!(one, 1.into());
         }
     }
 
@@ -525,17 +529,17 @@ mod large_prime_tests {
                     continue;
                 } // Skip division by zero
 
-                let x_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(x);
-                let y_fp = MontgomeryFp::<PRIME_30BIT>::from_u32(y);
+                let x_fp = MontgomeryFp::<PRIME_30BIT>::from(x);
+                let y_fp = MontgomeryFp::<PRIME_30BIT>::from(y);
                 let our_x_div_y = (x_fp / y_fp).unwrap();
                 let reconstructed_x = our_x_div_y * y_fp;
-                assert_eq!(reconstructed_x.to_u32(), x);
+                assert_eq!(reconstructed_x, x.into());
             }
         }
 
         // Also verify division by zero returns None
-        let one = MontgomeryFp::<PRIME_30BIT>::from_u32(1);
-        let zero = MontgomeryFp::<PRIME_30BIT>::from_u32(0);
+        let one = MontgomeryFp::<PRIME_30BIT>::from(1);
+        let zero = MontgomeryFp::<PRIME_30BIT>::from(0);
         assert_eq!(one / zero, None);
     }
 
@@ -547,6 +551,6 @@ mod large_prime_tests {
 
         // Verify one() returns correct Montgomery form
         let one = MontgomeryFp::<PRIME_30BIT>::one();
-        assert_eq!(one.to_u32(), 1);
+        assert_eq!(one, 1.into());
     }
 }

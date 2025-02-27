@@ -9,9 +9,9 @@
 #![warn(missing_debug_implementations)]
 
 mod ff;
-pub use ff::*;
+pub use ff::{Field, MontgomeryFp};
 mod poly;
-
+pub use poly::{DenseMultivariatePolynomial, MultivariatePolynomial, UnivariatePolynomial};
 fn main() {
     println!("Hello, world!");
 }
