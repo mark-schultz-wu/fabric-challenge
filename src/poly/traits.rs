@@ -19,7 +19,7 @@ pub trait MultivariatePolynomial<F: Field>: Clone {
     /// Returns `true` if the modification is successful.
     /// returns `false` if it is unsuccessful, say because
     /// `self` is already a constant polynomial.
-    fn shrink_last(&mut self, value: F) -> bool;
+    fn shrink_last(&mut self, value: &F) -> bool;
 
     /// Returns the degree of the polynomial in the i-th variable
     /// (The highest power of the i-th variable that appears in any term)

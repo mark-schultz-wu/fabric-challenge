@@ -163,7 +163,7 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
     /// Substitutes the `value : F` into the last variable of the multivariate polynomial,
     /// yielding a multivariate polynomial of 1 fewer degree.
     /// Returns `true` if the operation succeeded, or `false` if it failed (due to having no free variables).
-    fn shrink_last(&mut self, value: F) -> bool {
+    fn shrink_last(&mut self, value: &F) -> bool {
         if self.current_variables == 0 {
             return false;
         }
@@ -535,7 +535,7 @@ mod tests {
         let mut poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Substitute z = 2
-        let success = poly.shrink_last(F::from(2));
+        let success = poly.shrink_last(&F::from(2));
 
         assert!(success);
         assert_eq!(poly.num_variables(), 2); // Now a polynomial in x,y
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(*poly.get_coefficient(&[0, 1]).unwrap(), F::from(8)); // 2*2^2 = 8
 
         // Substitute y = 3
-        let success = poly.shrink_last(F::from(3));
+        let success = poly.shrink_last(&F::from(3));
 
         assert!(success);
         assert_eq!(poly.num_variables(), 1); // Now a polynomial in x
@@ -572,15 +572,15 @@ mod tests {
         assert_eq!(poly.num_variables(), 4);
 
         // Shrink polynomial multiple times
-        poly.shrink_last(F::from(2));
+        poly.shrink_last(&F::from(2));
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 3);
 
-        poly.shrink_last(F::from(3));
+        poly.shrink_last(&F::from(3));
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 2);
 
-        poly.shrink_last(F::from(4));
+        poly.shrink_last(&F::from(4));
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 1);
 
@@ -605,7 +605,7 @@ mod tests {
         assert_eq!(poly.coefficients.len(), 5);
 
         // Shrink the last variable (z)
-        poly.shrink_last(F::from(2));
+        poly.shrink_last(&F::from(2));
         assert_eq!(poly.num_variables(), 2);
 
         // Check that no exponent vectors have any non-zero values beyond the current_variables
@@ -664,9 +664,9 @@ mod tests {
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
-        constant_poly.shrink_last(F::from(1));
-        constant_poly.shrink_last(F::from(1));
-        constant_poly.shrink_last(F::from(1));
+        constant_poly.shrink_last(&F::from(1));
+        constant_poly.shrink_last(&F::from(1));
+        constant_poly.shrink_last(&F::from(1));
         assert!(!constant_poly.has_no_terms());
         assert!(constant_poly.has_no_variables()); // Now it is constant
 
@@ -711,11 +711,11 @@ mod tests {
         let mut poly = GeneralMultivariatePolynomial::zero(1);
 
         // First shrink should succeed
-        assert!(poly.shrink_last(F::from(1)));
+        assert!(poly.shrink_last(&F::from(1)));
         assert_eq!(poly.num_variables(), 0);
 
         // Second shrink should fail since we have no variables left
-        assert!(!poly.shrink_last(F::from(2)));
+        assert!(!poly.shrink_last(&F::from(2)));
         assert_eq!(poly.num_variables(), 0);
     }
 }

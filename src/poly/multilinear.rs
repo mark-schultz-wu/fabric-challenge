@@ -168,7 +168,7 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         UnivariatePolynomial::new(vec![const_coeff, linear_coeff])
     }
 
-    fn shrink_last(&mut self, value: F) -> bool {
+    fn shrink_last(&mut self, value: &F) -> bool {
         if self.current_variables == 0 {
             return false;
         }
@@ -191,7 +191,7 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
                 exponents.set(last_var, false);
 
                 // Calculate the substituted value (for multilinear, always multiply by the value once)
-                coeff *= &value;
+                coeff *= value;
 
                 // Only update if the new value is non-zero
                 if !coeff.is_zero() {
@@ -556,7 +556,7 @@ mod tests {
         let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Substitute z = 2
-        let success = poly.shrink_last(F::from(2));
+        let success = poly.shrink_last(&F::from(2));
 
         assert!(success);
         assert_eq!(poly.num_variables(), 2); // Now a polynomial in x,y
@@ -577,7 +577,7 @@ mod tests {
         ); // 2*2 = 4
 
         // Substitute y = 3
-        let success = poly.shrink_last(F::from(3));
+        let success = poly.shrink_last(&F::from(3));
 
         assert!(success);
         assert_eq!(poly.num_variables(), 1); // Now a polynomial in x
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(poly.coefficients.len(), 5);
 
         // Shrink the last variable (z)
-        poly.shrink_last(F::from(2));
+        poly.shrink_last(&F::from(2));
         assert_eq!(poly.num_variables(), 2);
 
         // Check that no exponent vectors have any bits set beyond the current_variables
@@ -651,13 +651,13 @@ mod tests {
         assert_eq!(poly.num_variables(), 4);
 
         // Shrink polynomial multiple times
-        poly.shrink_last(F::from(2));
+        poly.shrink_last(&F::from(2));
         assert_eq!(poly.num_variables(), 3);
 
-        poly.shrink_last(F::from(3));
+        poly.shrink_last(&F::from(3));
         assert_eq!(poly.num_variables(), 2);
 
-        poly.shrink_last(F::from(4));
+        poly.shrink_last(&F::from(4));
         assert_eq!(poly.num_variables(), 1);
 
         // After shrinking the last variable, we should have a constant polynomial
@@ -682,9 +682,9 @@ mod tests {
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
-        constant_poly.shrink_last(F::from(1));
-        constant_poly.shrink_last(F::from(1));
-        constant_poly.shrink_last(F::from(1));
+        constant_poly.shrink_last(&F::from(1));
+        constant_poly.shrink_last(&F::from(1));
+        constant_poly.shrink_last(&F::from(1));
         assert!(!constant_poly.has_no_terms());
         assert!(constant_poly.has_no_variables()); // Now it is constant
 
@@ -728,11 +728,11 @@ mod tests {
         let mut poly = MultilinearPolynomial::zero(1);
 
         // First shrink should succeed
-        assert!(poly.shrink_last(F::from(1)));
+        assert!(poly.shrink_last(&F::from(1)));
         assert_eq!(poly.num_variables(), 0);
 
         // Second shrink should fail since we have no variables left
-        assert!(!poly.shrink_last(F::from(2)));
+        assert!(!poly.shrink_last(&F::from(2)));
         assert_eq!(poly.num_variables(), 0);
     }
 
