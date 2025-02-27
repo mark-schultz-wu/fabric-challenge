@@ -30,7 +30,7 @@ impl<F: Field> DenseMultivariatePolynomial<F> {
             .unwrap_or(0);
 
         // Remove keys that have zero value
-        coefficients.retain(|_, v| !v.has_no_terms());
+        coefficients.retain(|_, v| !v.is_zero());
 
         // If we've removed everything, ensure we have a proper zero polynomial
         // with the correct number of variables
@@ -68,7 +68,7 @@ impl<F: Field> DenseMultivariatePolynomial<F> {
         let mut full_exponents = exponents;
         full_exponents.resize(self.max_variables, 0);
 
-        if coefficient.has_no_terms() {
+        if coefficient.is_zero() {
             self.coefficients.remove(&full_exponents);
         } else {
             self.coefficients.insert(full_exponents, coefficient);
@@ -215,7 +215,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
                 let new_value = coeff * value.pow(last_var_power as u32);
 
                 // Only update if the new value is non-zero
-                if !new_value.has_no_terms() {
+                if !new_value.is_zero() {
                     // Update or add the entry with the substituted value
                     *self.coefficients.entry(key).or_insert(F::zero()) += new_value;
                 }
@@ -223,7 +223,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
         }
 
         // Clean up any zero coefficients that might have resulted from additions
-        self.coefficients.retain(|_, v| !v.has_no_terms());
+        self.coefficients.retain(|_, v| !v.is_zero());
 
         // Decrement the number of current variables
         self.current_variables -= 1;
@@ -254,7 +254,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
 
     /// Checks if the polynomial is the zero polynomial
     fn has_no_terms(&self) -> bool {
-        self.coefficients.values().all(|v| v.has_no_terms())
+        self.coefficients.values().all(|v| v.is_zero())
     }
 
     /// Computes the total degree of the polynomial.

@@ -49,7 +49,7 @@ impl<const P: u32> Field for MontgomeryFp<P> {
         result
     }
     /// Checking if zero
-    fn has_no_terms(&self) -> bool {
+    fn is_zero(&self) -> bool {
         self.0 == 0
     }
 }
@@ -101,14 +101,14 @@ impl<const P: u32> MontgomeryFp<P> {
     /// Check if element is zero
     ///
     /// TODO: Change to be constant-time, and change each callsite.
-    pub const fn has_no_terms(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.0 == 0
     }
 
     /// Multiplicative inverse using Fermat's Little Theorem
     pub fn inv(&self) -> Option<Self> {
         // TODO: change to be constant time
-        if self.has_no_terms() {
+        if self.is_zero() {
             None
         } else {
             // x^(p-2) ≡ x^(-1) mod p when p is prime
@@ -118,7 +118,7 @@ impl<const P: u32> MontgomeryFp<P> {
 
     /// Negation in-place
     pub fn neg_inplace(&mut self) {
-        self.0 = MontgomeryFp::<P>::const_sub(P, self.0, !self.has_no_terms());
+        self.0 = MontgomeryFp::<P>::const_sub(P, self.0, !self.is_zero());
     }
 }
 
@@ -234,7 +234,7 @@ impl<const P: u32> Neg for MontgomeryFp<P> {
     type Output = Self;
 
     fn neg(self) -> Self {
-        Self(Self::const_sub(P, self.0, !self.has_no_terms()))
+        Self(Self::const_sub(P, self.0, !self.is_zero()))
     }
 }
 

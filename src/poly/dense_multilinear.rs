@@ -36,7 +36,7 @@ impl<F: Field> DenseMultilinearPolynomial<F> {
         let max_variables = coefficients.keys().map(|bv| bv.len()).max().unwrap_or(0);
 
         // Remove keys that have zero value
-        coefficients.retain(|_, v| !v.has_no_terms());
+        coefficients.retain(|_, v| !v.is_zero());
 
         // Normalize all exponent vectors to have the same length
         let normalized_coefficients = coefficients
@@ -68,7 +68,7 @@ impl<F: Field> DenseMultilinearPolynomial<F> {
             exponents.resize(self.max_variables, false);
         }
 
-        if coefficient.has_no_terms() {
+        if coefficient.is_zero() {
             self.coefficients.remove(&exponents);
         } else {
             self.coefficients.insert(exponents, coefficient);
@@ -117,12 +117,15 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultilinearPolynomial<F> {
             let mut term_value = coefficient.clone();
 
             // For each set bit in the exponent vector, multiply by the corresponding point value
-            // Only consider the first current_variables elements
             for var_idx in 0..self.current_variables {
                 if exponents[var_idx] {
                     term_value *= &point[var_idx];
                 }
             }
+            // All of the higher variables are 0 (this is an invariant we are maintaining)
+            debug_assert!((0..self.max_variables)
+                .skip(self.current_variables)
+                .all(|i| !exponents[i]));
 
             result = result + term_value;
         }
@@ -197,7 +200,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultilinearPolynomial<F> {
                 coeff *= &value;
 
                 // Only update if the new value is non-zero
-                if !coeff.has_no_terms() {
+                if !coeff.is_zero() {
                     // Update or add the entry with the substituted value
                     *self.coefficients.entry(exponents).or_insert(F::zero()) += coeff;
                 }
@@ -205,7 +208,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultilinearPolynomial<F> {
         }
 
         // Clean up any zero coefficients that might have resulted from additions
-        self.coefficients.retain(|_, v| !v.has_no_terms());
+        self.coefficients.retain(|_, v| !v.is_zero());
 
         // Decrement the number of current variables
         self.current_variables -= 1;
@@ -696,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn test_has_no_variables_and_has_no_terms() {
+    fn test_has_no_variables_and_is_zero() {
         // Zero polynomial
         let zero_poly = DenseMultilinearPolynomial::<F>::zero(0);
         assert!(zero_poly.has_no_terms());
