@@ -1,4 +1,5 @@
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
+use rand_core::{CryptoRng, RngCore};
 use std::fmt::Debug;
 /// A finite field, supporting arbitrary field operations
 pub trait Field:
@@ -31,4 +32,6 @@ pub trait Field:
     fn pow(&self, exp: u32) -> Self;
     /// Checking if zero
     fn is_zero(&self) -> bool;
+    /// Sample a uniformly random vield element
+    fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self;
 }

@@ -3,6 +3,7 @@
 
 use crate::ff::traits::Field;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use rand_core::{CryptoRng, RngCore};
 use std::convert::From;
 use std::ops::Div;
 
@@ -51,6 +52,18 @@ impl<const P: u32> Field for MontgomeryFp<P> {
     /// Checking if zero
     fn is_zero(&self) -> bool {
         self.0 == 0
+    }
+    /// Uniform sampling
+    fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
+        let mut buff: [u8; 4] = [0; 4];
+        // Rejection sample to ensure exactly uniform sample
+        loop {
+            rng.fill_bytes(&mut buff);
+            let val = u32::from_be_bytes(buff);
+            if val < P {
+                return val.into();
+            }
+        }
     }
 }
 
