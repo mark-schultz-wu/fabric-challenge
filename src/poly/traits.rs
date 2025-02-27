@@ -26,13 +26,13 @@ pub trait MultivariatePolynomial<F: Field>: Clone {
     /// A non-zero polynomial has degree `Some(d)`, while the zero polynomial has degree `None`.
     fn degree(&self, variable_index: usize) -> Option<usize>;
 
-    /// Checks if the polynomial is the zero polynomial
-    fn is_zero(&self) -> bool;
+    /// Checks if the polynomial has no terms, e.g. is the empty polynomial
+    fn has_no_terms(&self) -> bool;
 
     /// Returns the maximum degree of any single variable in the polynomial
     /// `None` is the 0 polynomial (degree -\infty)
     fn max_single_degree(&self) -> Option<usize> {
-        if self.is_zero() {
+        if self.has_no_terms() {
             None
         } else {
             (0..self.num_variables())

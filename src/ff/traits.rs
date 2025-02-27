@@ -30,5 +30,5 @@ pub trait Field:
     /// Powering
     fn pow(&self, exp: u32) -> Self;
     /// Checking if zero
-    fn is_zero(&self) -> bool;
+    fn has_no_terms(&self) -> bool;
 }

@@ -30,7 +30,7 @@ impl<F: Field> DenseMultivariatePolynomial<F> {
             .unwrap_or(0);
 
         // Remove keys that have zero value
-        coefficients.retain(|_, v| !v.is_zero());
+        coefficients.retain(|_, v| !v.has_no_terms());
 
         // If we've removed everything, ensure we have a proper zero polynomial
         // with the correct number of variables
@@ -68,7 +68,7 @@ impl<F: Field> DenseMultivariatePolynomial<F> {
         let mut full_exponents = exponents;
         full_exponents.resize(self.max_variables, 0);
 
-        if coefficient.is_zero() {
+        if coefficient.has_no_terms() {
             self.coefficients.remove(&full_exponents);
         } else {
             self.coefficients.insert(full_exponents, coefficient);
@@ -215,7 +215,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
                 let new_value = coeff * value.pow(last_var_power as u32);
 
                 // Only update if the new value is non-zero
-                if !new_value.is_zero() {
+                if !new_value.has_no_terms() {
                     // Update or add the entry with the substituted value
                     *self.coefficients.entry(key).or_insert(F::zero()) += new_value;
                 }
@@ -223,7 +223,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
         }
 
         // Clean up any zero coefficients that might have resulted from additions
-        self.coefficients.retain(|_, v| !v.is_zero());
+        self.coefficients.retain(|_, v| !v.has_no_terms());
 
         // Decrement the number of current variables
         self.current_variables -= 1;
@@ -233,7 +233,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
     /// Returns the degree of the variable of index `variable_index`, or `None`
     /// if this index is larger than the current number of variables.
     fn degree(&self, variable_index: usize) -> Option<usize> {
-        if variable_index >= self.current_variables || self.is_zero() {
+        if variable_index >= self.current_variables || self.has_no_terms() {
             return None;
         }
 
@@ -253,15 +253,15 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
     }
 
     /// Checks if the polynomial is the zero polynomial
-    fn is_zero(&self) -> bool {
-        self.coefficients.values().all(|v| v.is_zero())
+    fn has_no_terms(&self) -> bool {
+        self.coefficients.values().all(|v| v.has_no_terms())
     }
 
     /// Computes the total degree of the polynomial.
     /// This is the maximum of the sums of the degrees of each term.
     /// Returns `None` for the zero polynomial
     fn total_degree(&self) -> Option<usize> {
-        if self.is_zero() {
+        if self.has_no_terms() {
             return None;
         }
 
@@ -370,14 +370,14 @@ mod tests {
 
         // Should have 0 variables and be recognized as zero
         assert_eq!(zero_poly.num_variables(), 0);
-        assert!(zero_poly.is_zero());
+        assert!(zero_poly.has_no_terms());
 
         // Create the zero polynomial explicitly with 3 variables
         let zero_poly_3vars = DenseMultivariatePolynomial::zero(3);
 
         // Should have 3 variables and be recognized as zero
         assert_eq!(zero_poly_3vars.num_variables(), 3);
-        assert!(zero_poly_3vars.is_zero());
+        assert!(zero_poly_3vars.has_no_terms());
 
         // Evaluation should always give zero
         assert_eq!(
@@ -414,7 +414,7 @@ mod tests {
 
         // Should be the zero polynomial with 3 variables
         assert_eq!(poly.num_variables(), 3);
-        assert!(poly.is_zero());
+        assert!(poly.has_no_terms());
     }
 
     #[test]
@@ -622,24 +622,85 @@ mod tests {
     }
 
     #[test]
-    fn test_has_no_variables_and_is_zero() {
+    fn test_no_irrelevant_ones_after_shrink() {
+        // Create a simple multivariate polynomial with 3 variables
+        let mut coeffs = HashMap::new();
+        coeffs.insert(vec![0, 0, 0], F::from(5)); // constant term
+        coeffs.insert(vec![1, 0, 0], F::from(2)); // x term
+        coeffs.insert(vec![0, 1, 0], F::from(3)); // y term
+        coeffs.insert(vec![0, 0, 1], F::from(4)); // z term
+        coeffs.insert(vec![1, 1, 1], F::from(7)); // xyz term
+
+        let mut poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        assert_eq!(poly.num_variables(), 3);
+
+        // Initial state should have the right number of terms
+        assert_eq!(poly.coefficients.len(), 5);
+
+        // Shrink the last variable (z)
+        poly.shrink_last(F::from(2));
+        assert_eq!(poly.num_variables(), 2);
+
+        // Check that no exponent vectors have any non-zero values beyond the current_variables
+        for exponent in poly.coefficients.keys() {
+            assert_eq!(
+                exponent.len(),
+                3,
+                "Exponent vector length should remain the same"
+            );
+
+            // Check that no non-zero values appear in positions at or after current_variables
+            for i in poly.current_variables..exponent.len() {
+                assert_eq!(
+                    exponent[i], 0,
+                    "No non-zero exponents should appear in positions beyond current_variables"
+                );
+            }
+        }
+
+        // Terms with z=1 should have been merged with their z=0 counterparts
+        // So [0,0,1] merges with [0,0,0] -> [0,0,0] with value 5 + 4*2 = 13
+        // [1,1,1] gets sent to [1,1,0] with value 7*2 = 14, which was not present before
+        // So we have 4 terms: [0,0,0], [1,0,0], [0,1,0], [1,1,0]
+        assert_eq!(
+            poly.coefficients.len(),
+            4,
+            "After shrinking z, terms should be merged appropriately"
+        );
+
+        // Check specific coefficients
+        assert_eq!(
+            *poly.get_coefficient(&[0, 0, 0]).unwrap(),
+            F::from(13), // 5 + 4*2 = 13
+            "Constant term should be updated correctly"
+        );
+
+        assert_eq!(
+            *poly.get_coefficient(&[1, 1, 0]).unwrap(),
+            F::from(14), // 7*2 = 14
+            "New xy term should have correct coefficient"
+        );
+    }
+
+    #[test]
+    fn test_has_no_variables_and_has_no_terms() {
         // Zero polynomial
         let zero_poly = DenseMultivariatePolynomial::<F>::zero(0);
-        assert!(zero_poly.is_zero());
+        assert!(zero_poly.has_no_terms());
         assert!(zero_poly.has_no_variables());
 
         // Constant polynomial
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(vec![0, 0, 0], F::from(5));
         let mut constant_poly = DenseMultivariatePolynomial::from_coefficients(constant_coeffs);
-        assert!(!constant_poly.is_zero());
+        assert!(!constant_poly.has_no_terms());
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
         constant_poly.shrink_last(F::from(1));
         constant_poly.shrink_last(F::from(1));
         constant_poly.shrink_last(F::from(1));
-        assert!(!constant_poly.is_zero());
+        assert!(!constant_poly.has_no_terms());
         assert!(constant_poly.has_no_variables()); // Now it is constant
 
         // Non-constant polynomial
@@ -647,7 +708,7 @@ mod tests {
         non_constant_coeffs.insert(vec![0, 0], F::from(5));
         non_constant_coeffs.insert(vec![1, 0], F::from(3));
         let non_constant_poly = DenseMultivariatePolynomial::from_coefficients(non_constant_coeffs);
-        assert!(!non_constant_poly.is_zero());
+        assert!(!non_constant_poly.has_no_terms());
         assert!(!non_constant_poly.has_no_variables());
     }
 

@@ -39,7 +39,7 @@ impl<F: Field> UnivariatePolynomial<F> {
     /// Returns the degree of the polynomial
     pub fn degree(&self) -> Option<usize> {
         for (i, v) in self.coefficients.iter().enumerate().rev() {
-            if v.is_zero() {
+            if v.has_no_terms() {
                 continue;
             } else {
                 return Some(i);
