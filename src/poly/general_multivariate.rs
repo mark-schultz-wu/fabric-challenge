@@ -32,15 +32,6 @@ impl<F: Field> GeneralMultivariatePolynomial<F> {
         // Remove keys that have zero value
         coefficients.retain(|_, v| !v.is_zero());
 
-        // If we've removed everything, ensure we have a proper zero polynomial
-        // with the correct number of variables
-        if coefficients.is_empty() && max_variables > 0 {
-            // Create a zero exponent vector of the right length
-            let zero_exponent = vec![0; max_variables];
-            // Insert a zero coefficient (will be special-cased in methods that need it)
-            coefficients.insert(zero_exponent, F::zero());
-        }
-
         // Normalize all exponent vectors to have the same length
         let normalized_coefficients = coefficients
             .into_iter()
@@ -103,9 +94,6 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
     }
 
     /// Evaluates the multivariate polynomial on a point
-    ///
-    /// # Panic:
-    /// * Panics if point.len() != self.current_variables
     fn evaluate(&self, point: &[F]) -> F {
         if point.len() != self.current_variables {
             panic!("Incorrect number of variables provided for evaluation");
@@ -146,34 +134,22 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
 
         // For each term in the polynomial
         for (exponents, coefficient) in &self.coefficients {
-            // Skip if the exponent vector contains powers for variables beyond current_variables
-            if exponents
-                .iter()
-                .skip(self.current_variables)
-                .any(|&e| e > 0)
-            {
-                continue;
-            }
-
             let last_var_power = exponents[last_var];
 
             // Calculate how many points in the boolean hypercube contribute to this term
-            let mut contributing_points = 1;
+            // The answer is 2^free_vars, where free_vars is the number
+            // of variables with exponent == 0 (e.g. not in the term)
+            // among all variables that are NOT the last variable.
+            //
+            // This is because each of these variables is summed over {0,1}, and
+            // 1. If exponent = 0, both settings of Xi contribute to the sum
+            // 2. If exponent = 1, only Xi = 1 contributes, and
+            // 3. If exponent > 1, then Xi^exponent == Xi, and only Xi = 1 contributes.
+            //
+            // Skip the last variable as we are not summing over it when taking a univariate slice.
 
-            for (var_idx, &exp) in exponents.iter().take(self.current_variables).enumerate() {
-                if var_idx == last_var {
-                    continue; // Skip the last variable
-                }
-
-                if exp == 0 {
-                    // If exponent is 0, the variable can be either 0 or 1
-                    contributing_points *= 2;
-                }
-                // If exponent is non-zero, the variable can only be 1
-                // This is because x^k = x for x ∈ {0,1} when k > 0
-            }
-
-            let mut contributing = F::from(contributing_points as u32);
+            let free_vars = (0..last_var).filter(|&i| exponents[i] == 0).count();
+            let mut contributing = F::from(1 << free_vars as u32);
             // Multiply coefficient by number of contributing points
             contributing *= coefficient;
 
@@ -296,15 +272,6 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
         let mut sum = F::zero();
 
         for (exponents, coefficient) in &self.coefficients {
-            // Skip if the exponent vector contains powers for variables beyond current_variables
-            if exponents
-                .iter()
-                .skip(self.current_variables)
-                .any(|&e| e > 0)
-            {
-                continue;
-            }
-
             // A variable with exponent > 0 must be 1 to contribute
             // A variable with exponent 0 can be either 0 or 1
 
