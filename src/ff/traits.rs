@@ -1,5 +1,5 @@
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
-
+use std::fmt::Debug;
 /// A finite field, supporting arbitrary field operations
 pub trait Field:
     Sized
@@ -21,6 +21,7 @@ pub trait Field:
     + PartialEq
     + Eq
     + From<u32>
+    + Debug
 {
     /// Additive identity of the field
     fn zero() -> Self;
