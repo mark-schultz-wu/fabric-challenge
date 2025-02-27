@@ -1,5 +1,5 @@
-use super::traits::MultivariatePolynomial;
-use super::univariate_poly::UnivariatePolynomial;
+use crate::poly::MultivariatePolynomial;
+use crate::poly::UnivariatePolynomial;
 use crate::Field;
 use std::collections::HashMap;
 
@@ -278,7 +278,7 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
     }
 
     /// Returns `true` if `self` has no free variables, and otherwise returns `false`.
-    fn is_constant(&self) -> bool {
+    fn has_no_variables(&self) -> bool {
         self.current_variables == 0
     }
 
@@ -622,25 +622,25 @@ mod tests {
     }
 
     #[test]
-    fn test_is_constant_and_is_zero() {
+    fn test_has_no_variables_and_is_zero() {
         // Zero polynomial
         let zero_poly = DenseMultivariatePolynomial::<F>::zero(0);
         assert!(zero_poly.is_zero());
-        assert!(zero_poly.is_constant());
+        assert!(zero_poly.has_no_variables());
 
         // Constant polynomial
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(vec![0, 0, 0], F::from(5));
         let mut constant_poly = DenseMultivariatePolynomial::from_coefficients(constant_coeffs);
         assert!(!constant_poly.is_zero());
-        assert!(!constant_poly.is_constant()); // Initially not constant because num_variables == 3
+        assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
         constant_poly.shrink_last(F::from(1));
         constant_poly.shrink_last(F::from(1));
         constant_poly.shrink_last(F::from(1));
         assert!(!constant_poly.is_zero());
-        assert!(constant_poly.is_constant()); // Now it is constant
+        assert!(constant_poly.has_no_variables()); // Now it is constant
 
         // Non-constant polynomial
         let mut non_constant_coeffs = HashMap::new();
@@ -648,7 +648,7 @@ mod tests {
         non_constant_coeffs.insert(vec![1, 0], F::from(3));
         let non_constant_poly = DenseMultivariatePolynomial::from_coefficients(non_constant_coeffs);
         assert!(!non_constant_poly.is_zero());
-        assert!(!non_constant_poly.is_constant());
+        assert!(!non_constant_poly.has_no_variables());
     }
 
     #[test]

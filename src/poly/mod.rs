@@ -1,3 +1,4 @@
+mod dense_multilinear;
 mod dense_multivariate;
 mod traits;
 mod univariate_poly;

@@ -3,7 +3,7 @@ use crate::Field;
 
 /// Trait for multivariate polynomials
 pub trait MultivariatePolynomial<F: Field>: Clone {
-    /// Returns the number of variables in this polynomial
+    /// Returns the current number of variables in this polynomial
     fn num_variables(&self) -> usize;
 
     /// Evaluates the polynomial at the given point
@@ -35,27 +35,25 @@ pub trait MultivariatePolynomial<F: Field>: Clone {
         if self.is_zero() {
             None
         } else {
-            Some(
-                (0..self.num_variables())
-                    .filter_map(|i| self.degree(i))
-                    .max()
-                    .unwrap_or(0),
-            )
+            (0..self.num_variables())
+                .filter_map(|i| self.degree(i))
+                .max()
         }
     }
 
     /// Returns the total degree of the polynomial
     /// (The highest sum of exponents across all terms)
+    /// Returns `None` for the zero polynomial
     fn total_degree(&self) -> Option<usize>;
 
     /// Returns true if this is a constant polynomial (no variables)
-    fn is_constant(&self) -> bool {
+    fn has_no_variables(&self) -> bool {
         self.num_variables() == 0
     }
 
     /// If this is a constant polynomial, return its value
     fn constant_value(&self) -> Option<F> {
-        if self.is_constant() {
+        if self.has_no_variables() {
             Some(self.evaluate(&[]))
         } else {
             None
