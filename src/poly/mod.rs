@@ -1,5 +1,6 @@
-mod assignments;
-mod generic_multivariate_poly;
-mod multilinear_poly;
+mod dense_multivariate;
 mod traits;
 mod univariate_poly;
+pub use dense_multivariate::DenseMultivariatePolynomial;
+pub use traits::MultivariatePolynomial;
+pub use univariate_poly::UnivariatePolynomial;

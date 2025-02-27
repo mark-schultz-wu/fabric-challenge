@@ -1,46 +1,67 @@
+use crate::poly::univariate_poly::UnivariatePolynomial;
 use crate::Field;
 
-// TODO: remove when used
-#[allow(dead_code)]
-/// A multivariate polynomial over a finite field.
-pub trait MultivariatePolynomial<F: Field> {
-    /// The concrete type used to represent univariate polynomials derived from this polynomial.
-    type UnivariatePoly: UnivariatePolynomial<F>;
-
-    /// Returns the number of variables in this polynomial.
+/// Trait for multivariate polynomials
+pub trait MultivariatePolynomial<F: Field>: Clone {
+    /// Returns the number of variables in this polynomial
     fn num_variables(&self) -> usize;
 
-    /// Returns the maximum degree of any variable in the polynomial.
-    /// For multilinear polynomials, this will always be 1.
-    fn max_degree(&self) -> usize;
-
-    /// Evaluates the polynomial at the given point.
+    /// Evaluates the polynomial at the given point
     fn evaluate(&self, point: &[F]) -> F;
 
-    /// Takes a univariate slice of the polynomial by fixing all but one variable.
-    fn univariate_slice(
-        &self,
-        variable_index: usize,
-        fixed_variables: &[F],
-    ) -> Self::UnivariatePoly;
+    /// Returns the univariate polynomial in the last variable,
+    /// with all other variables summed over their domains
+    fn univariate_slice_last(&self) -> UnivariatePolynomial<F>;
 
-    /// Computes the sum of this polynomial over the boolean hypercube for a given variable.
-    fn sum_over_boolean_hypercube(&self, variable_index: usize, partial_point: &[Option<F>]) -> F;
-}
-
-// TODO: remove when used
-#[allow(dead_code)]
-/// A univariate polynomial over a finite field.
-pub trait UnivariatePolynomial<F: Field> {
-    fn new(input: &[F]) -> Self;
-    /// Returns the degree of this polynomial.
+    /// Substitutes the given value for the last variable,
+    /// modifying `&mut self` in-place
     ///
-    /// Note: Degree of the 0 polynomial is `None`
-    fn degree(&self) -> Option<usize>;
+    /// Returns `true` if the modification is successful.
+    /// returns `false` if it is unsuccessful, say because
+    /// `self` is already a constant polynomial.
+    fn shrink_last(&mut self, value: F) -> bool;
 
-    /// Evaluates the polynomial at the given point.
-    fn evaluate(&self, point: &F) -> F;
+    /// Returns the degree of the polynomial in the i-th variable
+    /// (The highest power of the i-th variable that appears in any term)
+    /// A non-zero polynomial has degree `Some(d)`, while the zero polynomial has degree `None`.
+    fn degree(&self, variable_index: usize) -> Option<usize>;
 
-    /// Get the coefficients associated with the polynomial
-    fn coefficients(&self) -> Vec<F>;
+    /// Checks if the polynomial is the zero polynomial
+    fn is_zero(&self) -> bool;
+
+    /// Returns the maximum degree of any single variable in the polynomial
+    /// `None` is the 0 polynomial (degree -\infty)
+    fn max_single_degree(&self) -> Option<usize> {
+        if self.is_zero() {
+            None
+        } else {
+            Some(
+                (0..self.num_variables())
+                    .filter_map(|i| self.degree(i))
+                    .max()
+                    .unwrap_or(0),
+            )
+        }
+    }
+
+    /// Returns the total degree of the polynomial
+    /// (The highest sum of exponents across all terms)
+    fn total_degree(&self) -> Option<usize>;
+
+    /// Returns true if this is a constant polynomial (no variables)
+    fn is_constant(&self) -> bool {
+        self.num_variables() == 0
+    }
+
+    /// If this is a constant polynomial, return its value
+    fn constant_value(&self) -> Option<F> {
+        if self.is_constant() {
+            Some(self.evaluate(&[]))
+        } else {
+            None
+        }
+    }
+
+    /// Sums the polynomial over the boolean hypercube
+    fn sum_over_boolean_hypercube(&self) -> F;
 }
