@@ -11,7 +11,10 @@
 mod ff;
 pub use ff::{Field, MontgomeryFp};
 mod poly;
-pub use poly::{GeneralMultivariatePolynomial, MultivariatePolynomial, UnivariatePolynomial};
+pub use poly::{
+    GeneralMultivariatePolynomial, MultilinearPolynomial, MultivariatePolynomial,
+    UnivariatePolynomial,
+};
 fn main() {
     println!("Hello, world!");
 }

@@ -650,9 +650,9 @@ mod tests {
             );
 
             // Check that no non-zero values appear in positions at or after current_variables
-            for i in poly.current_variables..exponent.len() {
+            for degree in exponent.iter().skip(poly.current_variables) {
                 assert_eq!(
-                    exponent[i], 0,
+                    *degree, 0,
                     "No non-zero exponents should appear in positions beyond current_variables"
                 );
             }

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 /// A multilinear polynomial representation where each variable
 /// has an exponent of at most 1 in any term.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MultilinearPolynomial<F: Field> {
     /// Maps exponent vectors (as bitvecs) to coefficients
     /// Each bit indicates whether the corresponding variable appears (1) or not (0)
@@ -122,12 +122,12 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
                     term_value *= &point[var_idx];
                 }
             }
-            // All of the higher variables are 0 (this is an invariant we are maintaining)
+            // All of the higher variables are 0 (this is an invariant we are maintaining, might as well check it)
             debug_assert!((0..self.max_variables)
                 .skip(self.current_variables)
                 .all(|i| !exponents[i]));
 
-            result = result + term_value;
+            result += &term_value;
         }
 
         result
@@ -145,18 +145,11 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         let last_var = self.current_variables - 1;
 
         for (exponents, coefficient) in &self.coefficients {
-            // Skip if the exponent vector contains powers for variables beyond current_variables
-            if exponents
-                .iter()
-                .skip(self.current_variables)
-                .any(|bit| *bit)
-            {
-                continue;
-            }
-
             let last_var_present = exponents[last_var];
 
             // Calculate how many points in the boolean hypercube contribute to this term
+            // If exponents[i] = 1, only Xi = 1 contributes, e.g. we do nothing.
+            // If exponents[i] = 0, both Xi \in\{0,1} contribute, e.g. we multiply the total by two.
             let free_vars = (0..last_var).filter(|&i| !exponents[i]).count();
 
             // 2^free_vars is the multiplier
@@ -164,10 +157,11 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
             let mut contribution = F::from(multiplier as u32);
             contribution *= coefficient;
 
+            // Add to the correct term of our linear (in last_var) poly.
             if last_var_present {
-                linear_coeff = linear_coeff + contribution;
+                linear_coeff += &contribution;
             } else {
-                const_coeff = const_coeff + contribution;
+                const_coeff += &contribution;
             }
         }
 
@@ -196,7 +190,7 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
                 // Set the last variable to 0
                 exponents.set(last_var, false);
 
-                // Calculate the substituted value (for multilinear, always multiply by value once)
+                // Calculate the substituted value (for multilinear, always multiply by the value once)
                 coeff *= &value;
 
                 // Only update if the new value is non-zero
@@ -224,12 +218,6 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         let has_var = self
             .coefficients
             .iter()
-            .filter(|(exponents, _)| {
-                !exponents
-                    .iter()
-                    .skip(self.current_variables)
-                    .any(|bit| *bit)
-            })
             .any(|(exponents, _)| exponents[variable_index]);
 
         if has_var {
@@ -251,16 +239,6 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         let mut max_degree = 0;
 
         for exponents in self.coefficients.keys() {
-            // Skip terms with variables beyond current_variables
-            let has_irrelevant_vars = exponents
-                .iter()
-                .skip(self.current_variables)
-                .any(|bit| *bit);
-
-            if has_irrelevant_vars {
-                continue;
-            }
-
             // Count the number of set bits (variables with exponent 1)
             let mut term_degree = 0;
             for i in 0..self.current_variables {
@@ -281,15 +259,6 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         let mut sum = F::zero();
 
         for (exponents, coefficient) in &self.coefficients {
-            // Skip if the exponent vector contains powers for variables beyond current_variables
-            if exponents
-                .iter()
-                .skip(self.current_variables)
-                .any(|bit| *bit)
-            {
-                continue;
-            }
-
             // Each variable with bit=0 doubles the count of contributing points
             let free_vars = (0..self.current_variables)
                 .filter(|&i| !exponents[i])
