@@ -177,38 +177,28 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultilinearPolynomial<F> {
         }
 
         let last_var = self.current_variables - 1;
+        let mut new_coefficients = HashMap::new();
 
-        // Identify keys where the last variable is present (bit is set to true)
-        let keys_to_process: Vec<BitVec> = self
-            .coefficients
-            .keys()
-            .filter(|exp| exp[last_var])
-            .cloned()
-            .collect();
+        // Process all terms
+        for (mut exponents, mut coefficient) in std::mem::take(&mut self.coefficients) {
+            let last_var_present = exponents[last_var];
 
-        // Process these keys
-        for exponents in keys_to_process {
-            // Remove the entry with the last variable
-            if let Some(mut coeff) = self.coefficients.remove(&exponents) {
-                // Create a new exponent vector with the last bit set to false
-                let mut new_exponents = exponents;
-                new_exponents.set(last_var, false);
+            // Set the last bit of the exponent vector to 0
+            exponents.set(last_var, false);
 
-                // Calculate the substituted value (for multilinear, power is always 1)
-                coeff *= &value;
+            // If the last variable was present, we substitute in
+            // value for it, and multiply by value
+            if last_var_present {
+                coefficient *= &value;
+            }
 
-                // Only update if the new value is non-zero
-                if !coeff.is_zero() {
-                    // Update or add the entry with the substituted value
-                    *self.coefficients.entry(new_exponents).or_insert(F::zero()) += coeff;
-                }
+            // Only update if the coefficient is non-zero
+            if !coefficient.is_zero() {
+                *new_coefficients.entry(exponents).or_insert(F::zero()) += coefficient;
             }
         }
 
-        // Clean up any zero coefficients that might have resulted from additions
-        self.coefficients.retain(|_, v| !v.is_zero());
-
-        // Decrement the number of current variables
+        self.coefficients = new_coefficients;
         self.current_variables -= 1;
         true
     }
@@ -384,6 +374,54 @@ mod tests {
         assert_eq!(
             zero_poly_3vars.evaluate(&[F::from(1), F::from(2), F::from(3)]),
             F::zero()
+        );
+    }
+
+    #[test]
+    fn test_no_irrelevant_ones_after_shrink() {
+        // Create a simple multilinear polynomial with 3 variables
+        let mut coeffs = HashMap::new();
+        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // constant term
+        coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(2)); // x term
+        coeffs.insert(create_bitvec(&[0, 1, 0]), F::from(3)); // y term
+        coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
+        coeffs.insert(create_bitvec(&[1, 1, 1]), F::from(7)); // xyz term
+
+        let mut poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        assert_eq!(poly.num_variables(), 3);
+
+        // Initial state should have the right number of terms
+        assert_eq!(poly.coefficients.len(), 5);
+
+        // Shrink the last variable (z)
+        poly.shrink_last(F::from(2));
+        assert_eq!(poly.num_variables(), 2);
+
+        // Check that no exponent vectors have any bits set beyond the current_variables
+        for exponent in poly.coefficients.keys() {
+            assert_eq!(
+                exponent.len(),
+                3,
+                "Exponent vector length should remain the same"
+            );
+
+            // Check that no 1s appear in positions at or after current_variables
+            for i in poly.num_variables()..exponent.len() {
+                assert!(
+                    !exponent[i],
+                    "No 1s should appear in positions beyond current_variables"
+                );
+            }
+        }
+
+        // Terms with z=1 should have been merged with their z=0 counterparts
+        // So [0,0,1] merges with [0,0,0].
+        // [1,1,1] gets sent to [1,1,0], which was not present, so there are still
+        // the 4 terms [0,0,0], [1,0,0], [0,1,0], [1,1,0].
+        assert_eq!(
+            dbg!(poly.coefficients).len(),
+            4,
+            "After shrinking z, terms should be merged appropriately"
         );
     }
 
