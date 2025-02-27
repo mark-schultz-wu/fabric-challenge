@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 /// A dense multivariate polynomial represented using a coefficient map
 #[derive(Debug, Clone)]
-pub struct DenseMultivariatePolynomial<F: Field> {
+pub struct GeneralMultivariatePolynomial<F: Field> {
     /// Maps exponent vectors to coefficients
     /// Each key is a vector of exponents, one for each variable
     /// e.g., [1, 0, 2] represents x0^1 * x2^2
@@ -19,7 +19,7 @@ pub struct DenseMultivariatePolynomial<F: Field> {
     current_variables: usize,
 }
 
-impl<F: Field> DenseMultivariatePolynomial<F> {
+impl<F: Field> GeneralMultivariatePolynomial<F> {
     /// Construct a Polynomial from a Hashmap associating exponent vectors with coefficients.
     pub fn from_coefficients(mut coefficients: HashMap<Vec<usize>, F>) -> Self {
         // First, determine the maximum number of variables
@@ -96,7 +96,7 @@ impl<F: Field> DenseMultivariatePolynomial<F> {
     }
 }
 
-impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
+impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
     /// Returns the current number of variables in the multivariate polynomial
     fn num_variables(&self) -> usize {
         self.current_variables
@@ -327,8 +327,8 @@ impl<F: Field> MultivariatePolynomial<F> for DenseMultivariatePolynomial<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::DenseMultivariatePolynomial;
     use crate::Field;
+    use crate::GeneralMultivariatePolynomial;
     use crate::MontgomeryFp;
     use crate::MultivariatePolynomial;
     use std::collections::HashMap;
@@ -344,7 +344,7 @@ mod tests {
         coeffs.insert(vec![1, 1, 0], F::from(3)); // xy term
         coeffs.insert(vec![0, 1, 2], F::from(2)); // yz^2 term
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Check number of variables
         assert_eq!(poly.num_variables(), 3);
@@ -366,14 +366,14 @@ mod tests {
     fn test_zero_polynomial() {
         // Create an empty polynomial (should be the zero polynomial)
         let empty_coeffs: HashMap<Vec<usize>, F> = HashMap::new();
-        let zero_poly = DenseMultivariatePolynomial::from_coefficients(empty_coeffs);
+        let zero_poly = GeneralMultivariatePolynomial::from_coefficients(empty_coeffs);
 
         // Should have 0 variables and be recognized as zero
         assert_eq!(zero_poly.num_variables(), 0);
         assert!(zero_poly.has_no_terms());
 
         // Create the zero polynomial explicitly with 3 variables
-        let zero_poly_3vars = DenseMultivariatePolynomial::zero(3);
+        let zero_poly_3vars = GeneralMultivariatePolynomial::zero(3);
 
         // Should have 3 variables and be recognized as zero
         assert_eq!(zero_poly_3vars.num_variables(), 3);
@@ -394,7 +394,7 @@ mod tests {
         coeffs.insert(vec![1, 0, 0], F::zero()); // This should be removed
         coeffs.insert(vec![0, 1, 0], F::from(3));
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Should only have the non-zero coefficients
         assert!(poly.get_coefficient(&[1, 0, 0]).is_none());
@@ -410,7 +410,7 @@ mod tests {
         coeffs.insert(vec![1, 1, 0], F::zero());
         coeffs.insert(vec![0, 0, 2], F::zero());
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Should be the zero polynomial with 3 variables
         assert_eq!(poly.num_variables(), 3);
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_set_coefficient() {
         // Create a zero polynomial with 3 variables
-        let mut poly = DenseMultivariatePolynomial::zero(3);
+        let mut poly = GeneralMultivariatePolynomial::zero(3);
 
         // Set some coefficients
         poly.set_coefficient(vec![1, 0, 0], F::from(5)); // x term
@@ -449,7 +449,7 @@ mod tests {
         coeffs.insert(vec![1, 1, 0], F::from(3)); // xy term
         coeffs.insert(vec![0, 1, 2], F::from(2)); // yz^2 term
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 3);
 
         // Create polynomial with 4 variables: f(x,y,z,w) = 5 + 3xy + 2yz^2 + w
@@ -459,7 +459,7 @@ mod tests {
         coeffs.insert(vec![0, 1, 2, 0], F::from(2)); // yz^2 term
         coeffs.insert(vec![0, 0, 0, 1], F::from(1)); // w term
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 4);
     }
 
@@ -471,7 +471,7 @@ mod tests {
         coeffs.insert(vec![1, 1, 0], F::from(3)); // xy term
         coeffs.insert(vec![0, 1, 2], F::from(2)); // yz^2 term
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Evaluate at (1,1,1): 5 + 3*1*1 + 2*1*1^2 = 5 + 3 + 2 = 10
         let result1 = poly.evaluate(&[F::from(1), F::from(1), F::from(1)]);
@@ -495,7 +495,7 @@ mod tests {
         coeffs.insert(vec![1, 1, 0], F::from(3));
         coeffs.insert(vec![0, 1, 2], F::from(2));
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Try to evaluate with only 2 variables
         poly.evaluate(&[F::from(1), F::from(2)]);
@@ -510,7 +510,7 @@ mod tests {
         coeffs.insert(vec![0, 1, 2], F::from(2));
         coeffs.insert(vec![3, 0, 0], F::from(4));
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Check degrees of variables
         assert_eq!(poly.degree(0).unwrap(), 3); // x has max degree 3
@@ -536,7 +536,7 @@ mod tests {
         coeffs.insert(vec![0, 1, 2], F::from(2)); // yz^2 term
         coeffs.insert(vec![0, 0, 3], F::from(4)); // z^3 term
 
-        let poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Slice the last variable (z)
         let univariate = poly.univariate_slice_last();
@@ -565,7 +565,7 @@ mod tests {
         coeffs.insert(vec![0, 1, 2], F::from(2)); // yz^2 term
         coeffs.insert(vec![0, 0, 3], F::from(4)); // z^3 term
 
-        let mut poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let mut poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Substitute z = 2
         let success = poly.shrink_last(F::from(2));
@@ -600,7 +600,7 @@ mod tests {
         let mut coeffs = HashMap::new();
         coeffs.insert(vec![0, 0, 0, 0], F::from(5)); // Constant term in 4-variable poly
 
-        let mut poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let mut poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 4);
 
@@ -631,7 +631,7 @@ mod tests {
         coeffs.insert(vec![0, 0, 1], F::from(4)); // z term
         coeffs.insert(vec![1, 1, 1], F::from(7)); // xyz term
 
-        let mut poly = DenseMultivariatePolynomial::from_coefficients(coeffs);
+        let mut poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 3);
 
         // Initial state should have the right number of terms
@@ -685,14 +685,14 @@ mod tests {
     #[test]
     fn test_has_no_variables_and_has_no_terms() {
         // Zero polynomial
-        let zero_poly = DenseMultivariatePolynomial::<F>::zero(0);
+        let zero_poly = GeneralMultivariatePolynomial::<F>::zero(0);
         assert!(zero_poly.has_no_terms());
         assert!(zero_poly.has_no_variables());
 
         // Constant polynomial
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(vec![0, 0, 0], F::from(5));
-        let mut constant_poly = DenseMultivariatePolynomial::from_coefficients(constant_coeffs);
+        let mut constant_poly = GeneralMultivariatePolynomial::from_coefficients(constant_coeffs);
         assert!(!constant_poly.has_no_terms());
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
@@ -707,7 +707,8 @@ mod tests {
         let mut non_constant_coeffs = HashMap::new();
         non_constant_coeffs.insert(vec![0, 0], F::from(5));
         non_constant_coeffs.insert(vec![1, 0], F::from(3));
-        let non_constant_poly = DenseMultivariatePolynomial::from_coefficients(non_constant_coeffs);
+        let non_constant_poly =
+            GeneralMultivariatePolynomial::from_coefficients(non_constant_coeffs);
         assert!(!non_constant_poly.has_no_terms());
         assert!(!non_constant_poly.has_no_variables());
     }
@@ -717,7 +718,7 @@ mod tests {
         // Test a constant polynomial: 5
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(vec![0, 0, 0], F::from(5));
-        let constant_poly = DenseMultivariatePolynomial::from_coefficients(constant_coeffs);
+        let constant_poly = GeneralMultivariatePolynomial::from_coefficients(constant_coeffs);
         // Sum is 5 * 2^3 = 40
         assert_eq!(constant_poly.sum_over_boolean_hypercube(), F::from(40));
 
@@ -725,14 +726,14 @@ mod tests {
         let mut linear_coeffs = HashMap::new();
         linear_coeffs.insert(vec![1, 0], F::from(1)); // x term
         linear_coeffs.insert(vec![0, 1], F::from(1)); // y term
-        let linear_poly = DenseMultivariatePolynomial::from_coefficients(linear_coeffs);
+        let linear_poly = GeneralMultivariatePolynomial::from_coefficients(linear_coeffs);
         // Sum is 1 * (0,1) + 1 * (1,0) + 2 * (1,1) = 4
         assert_eq!(linear_poly.sum_over_boolean_hypercube(), F::from(4));
 
         // Test f(x,y,z) = xyz (only equals 1 at (1,1,1))
         let mut product_coeffs = HashMap::new();
         product_coeffs.insert(vec![1, 1, 1], F::from(1));
-        let product_poly = DenseMultivariatePolynomial::from_coefficients(product_coeffs);
+        let product_poly = GeneralMultivariatePolynomial::from_coefficients(product_coeffs);
         // Sum is 1 at point (1,1,1), 0 elsewhere
         assert_eq!(product_poly.sum_over_boolean_hypercube(), F::from(1));
     }
@@ -740,7 +741,7 @@ mod tests {
     #[test]
     fn test_shrinking_beyond_dimensionality() {
         // Create a zero polynomial with 1 variable
-        let mut poly = DenseMultivariatePolynomial::zero(1);
+        let mut poly = GeneralMultivariatePolynomial::zero(1);
 
         // First shrink should succeed
         assert!(poly.shrink_last(F::from(1)));

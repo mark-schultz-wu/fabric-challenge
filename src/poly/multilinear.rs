@@ -4,10 +4,10 @@ use crate::Field;
 use bitvec::prelude::*;
 use std::collections::HashMap;
 
-/// A dense multilinear polynomial representation where each variable
+/// A multilinear polynomial representation where each variable
 /// has an exponent of at most 1 in any term.
 #[derive(Clone)]
-pub struct DenseMultilinearPolynomial<F: Field> {
+pub struct MultilinearPolynomial<F: Field> {
     /// Maps exponent vectors (as bitvecs) to coefficients
     /// Each bit indicates whether the corresponding variable appears (1) or not (0)
     coefficients: HashMap<BitVec, F>,
@@ -20,7 +20,7 @@ pub struct DenseMultilinearPolynomial<F: Field> {
     current_variables: usize,
 }
 
-impl<F: Field> DenseMultilinearPolynomial<F> {
+impl<F: Field> MultilinearPolynomial<F> {
     /// Create a new empty multilinear polynomial with the specified number of variables
     pub fn new(num_variables: usize) -> Self {
         Self {
@@ -101,7 +101,7 @@ impl<F: Field> DenseMultilinearPolynomial<F> {
     }
 }
 
-impl<F: Field> MultivariatePolynomial<F> for DenseMultilinearPolynomial<F> {
+impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
     fn num_variables(&self) -> usize {
         self.current_variables
     }
@@ -335,7 +335,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Check number of variables
         assert_eq!(poly.num_variables(), 3);
@@ -368,7 +368,7 @@ mod tests {
     fn test_zero_polynomial() {
         // Create an empty polynomial (should be the zero polynomial)
         let empty_coeffs: HashMap<BitVec, F> = HashMap::new();
-        let zero_poly = DenseMultilinearPolynomial::from_coefficients(empty_coeffs);
+        let zero_poly = MultilinearPolynomial::from_coefficients(empty_coeffs);
 
         // Should have 0 variables and be recognized as zero
         assert_eq!(zero_poly.num_variables(), 0);
@@ -376,7 +376,7 @@ mod tests {
         assert!(zero_poly.has_no_variables());
 
         // Create the zero polynomial explicitly with 3 variables
-        let zero_poly_3vars = DenseMultilinearPolynomial::zero(3);
+        let zero_poly_3vars = MultilinearPolynomial::zero(3);
 
         // Should have 3 variables and be recognized as zero
         assert_eq!(zero_poly_3vars.num_variables(), 3);
@@ -397,7 +397,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 0, 0]), F::zero()); // This should be removed
         coeffs.insert(create_bitvec(&[0, 1, 0]), F::from(3));
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Should only have the non-zero coefficients
         assert!(poly.get_coefficient(&create_bitvec(&[1, 0, 0])).is_none());
@@ -419,7 +419,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 1, 0]), F::zero());
         coeffs.insert(create_bitvec(&[0, 0, 1]), F::zero());
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Should be the zero polynomial with 3 variables
         assert_eq!(poly.num_variables(), 3);
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_set_coefficient() {
         // Create a zero polynomial with 3 variables
-        let mut poly = DenseMultilinearPolynomial::zero(3);
+        let mut poly = MultilinearPolynomial::zero(3);
 
         // Set some coefficients
         poly.set_coefficient(create_bitvec(&[1, 0, 0]), F::from(5)); // x term
@@ -470,7 +470,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 3);
 
         // Create multilinear polynomial with 4 variables: f(x,y,z,w) = 5 + 3xy + 2yz + w
@@ -480,7 +480,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[0, 1, 1, 0]), F::from(2)); // yz term
         coeffs.insert(create_bitvec(&[0, 0, 0, 1]), F::from(1)); // w term
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 4);
     }
 
@@ -492,7 +492,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Evaluate at (1,1,1): 5 + 3*1*1 + 2*1*1 = 5 + 3 + 2 = 10
         let result1 = poly.evaluate(&[F::from(1), F::from(1), F::from(1)]);
@@ -516,7 +516,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3));
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Try to evaluate with only 2 variables
         poly.evaluate(&[F::from(1), F::from(2)]);
@@ -531,7 +531,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
         coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(4));
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Check degrees of variables - for multilinear, degree is at most 1
         assert_eq!(poly.degree(0).unwrap(), 1); // x has max degree 1
@@ -557,7 +557,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
         coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
 
-        let poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Slice the last variable (z)
         let univariate = poly.univariate_slice_last();
@@ -584,7 +584,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
         coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
 
-        let mut poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
 
         // Substitute z = 2
         let success = poly.shrink_last(F::from(2));
@@ -634,7 +634,7 @@ mod tests {
         coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
         coeffs.insert(create_bitvec(&[1, 1, 1]), F::from(7)); // xyz term
 
-        let mut poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 3);
 
         // Initial state should have the right number of terms
@@ -678,7 +678,7 @@ mod tests {
         let mut coeffs = HashMap::new();
         coeffs.insert(create_bitvec(&[0, 0, 0, 0]), F::from(5)); // Constant term in 4-variable poly
 
-        let mut poly = DenseMultilinearPolynomial::from_coefficients(coeffs);
+        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
         assert_eq!(poly.num_variables(), 4);
 
         // Shrink polynomial multiple times
@@ -701,14 +701,14 @@ mod tests {
     #[test]
     fn test_has_no_variables_and_is_zero() {
         // Zero polynomial
-        let zero_poly = DenseMultilinearPolynomial::<F>::zero(0);
+        let zero_poly = MultilinearPolynomial::<F>::zero(0);
         assert!(zero_poly.has_no_terms());
         assert!(zero_poly.has_no_variables());
 
         // Constant polynomial
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        let mut constant_poly = DenseMultilinearPolynomial::from_coefficients(constant_coeffs);
+        let mut constant_poly = MultilinearPolynomial::from_coefficients(constant_coeffs);
         assert!(!constant_poly.has_no_terms());
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
@@ -723,7 +723,7 @@ mod tests {
         let mut non_constant_coeffs = HashMap::new();
         non_constant_coeffs.insert(create_bitvec(&[0, 0]), F::from(5));
         non_constant_coeffs.insert(create_bitvec(&[1, 0]), F::from(3));
-        let non_constant_poly = DenseMultilinearPolynomial::from_coefficients(non_constant_coeffs);
+        let non_constant_poly = MultilinearPolynomial::from_coefficients(non_constant_coeffs);
         assert!(!non_constant_poly.has_no_terms());
         assert!(!non_constant_poly.has_no_variables());
     }
@@ -733,7 +733,7 @@ mod tests {
         // Test a constant polynomial: 5
         let mut constant_coeffs = HashMap::new();
         constant_coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        let constant_poly = DenseMultilinearPolynomial::from_coefficients(constant_coeffs);
+        let constant_poly = MultilinearPolynomial::from_coefficients(constant_coeffs);
         // Sum is 5 * 2^3 = 40
         assert_eq!(constant_poly.sum_over_boolean_hypercube(), F::from(40));
 
@@ -741,14 +741,14 @@ mod tests {
         let mut linear_coeffs = HashMap::new();
         linear_coeffs.insert(create_bitvec(&[1, 0]), F::from(1)); // x term
         linear_coeffs.insert(create_bitvec(&[0, 1]), F::from(1)); // y term
-        let linear_poly = DenseMultilinearPolynomial::from_coefficients(linear_coeffs);
+        let linear_poly = MultilinearPolynomial::from_coefficients(linear_coeffs);
         // Sum is 1 * (0,1) + 1 * (1,0) + 2 * (1,1) = 4
         assert_eq!(linear_poly.sum_over_boolean_hypercube(), F::from(4));
 
         // Test f(x,y,z) = xyz (only equals 1 at (1,1,1))
         let mut product_coeffs = HashMap::new();
         product_coeffs.insert(create_bitvec(&[1, 1, 1]), F::from(1));
-        let product_poly = DenseMultilinearPolynomial::from_coefficients(product_coeffs);
+        let product_poly = MultilinearPolynomial::from_coefficients(product_coeffs);
         // Sum is 1 at point (1,1,1), 0 elsewhere
         assert_eq!(product_poly.sum_over_boolean_hypercube(), F::from(1));
     }
@@ -756,7 +756,7 @@ mod tests {
     #[test]
     fn test_shrinking_beyond_dimensionality() {
         // Create a zero polynomial with 1 variable
-        let mut poly = DenseMultilinearPolynomial::zero(1);
+        let mut poly = MultilinearPolynomial::zero(1);
 
         // First shrink should succeed
         assert!(poly.shrink_last(F::from(1)));

@@ -11,7 +11,7 @@
 mod ff;
 pub use ff::{Field, MontgomeryFp};
 mod poly;
-pub use poly::{DenseMultivariatePolynomial, MultivariatePolynomial, UnivariatePolynomial};
+pub use poly::{GeneralMultivariatePolynomial, MultivariatePolynomial, UnivariatePolynomial};
 fn main() {
     println!("Hello, world!");
 }
