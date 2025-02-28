@@ -2,10 +2,9 @@
 //! Not currently constant time, though it would not be particularly difficult to make it constant time.
 
 use crate::ff::traits::Field;
-use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use rand_core::{CryptoRng, RngCore};
 use std::convert::From;
-use std::ops::Div;
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// Computes -a^(-1) mod 2^32 using the Newton-Raphson method
 pub const fn mont_neg_inv(a: u32) -> u32 {
