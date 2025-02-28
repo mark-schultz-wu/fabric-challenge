@@ -11,8 +11,11 @@ use std::marker::PhantomData;
 /// The errors of the Sumcheck protocol
 #[derive(Debug, Clone, Copy)]
 pub enum ProtocolError {
+    /// Result of processing a message that is VerifierMessage::{Accept, Reject(_)}
     ProtocolAlreadyCompleted,
+    /// Result of processing VerifierMessage::Challenge(_) before VerifierMessage::Initial
     ProcessMessageInWrongOrder,
+    /// Result of calling the prover k+1 times for a k-variate polynomial
     AttemptToShrinkConstantPoly,
 }
 
@@ -28,7 +31,9 @@ pub struct Prover<F: Field, P: MultivariatePolynomial<F>> {
 /// The message variants the prover sends during the sumcheck protoocl
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProverMessage<F: Field> {
+    /// The initial message in Sumcheck, communicating a value (`F`) that it is claimed the polynomial sums to, as well as the initial univariate slice
     InitialMessage(F, UnivariatePolynomial<F>),
+    /// Non-initial messages in sumcheck, communicating a univariate slice.
     OtherMessage(UnivariatePolynomial<F>),
 }
 
@@ -93,9 +98,13 @@ pub struct Verifier<F: Field, P: MultivariatePolynomial<F>> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The messages the verifier sends during sumcheck
 pub enum VerifierMessage<F: Field> {
+    /// A challenge point
     Challenge(F),
+    /// Initial message in the Sumcheck Protocol
     Initial,
+    /// Message sent when the Verifier accepts
     Accept,
+    /// Message sent when the verifier rejects, as well as a reason for rejecting
     Reject(String),
 }
 
