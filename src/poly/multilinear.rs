@@ -4,6 +4,8 @@ use crate::Field;
 use bitvec::prelude::*;
 use std::collections::HashMap;
 
+use super::traits::ShrinkError;
+
 /// A multilinear polynomial representation where each variable
 /// has an exponent of at most 1 in any term.
 #[derive(Debug, Clone)]
@@ -168,9 +170,9 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
         UnivariatePolynomial::new(vec![const_coeff, linear_coeff])
     }
 
-    fn shrink_last(&mut self, value: &F) -> bool {
+    fn shrink_last(&mut self, value: &F) -> Result<(), ShrinkError> {
         if self.current_variables == 0 {
-            return false;
+            return Err(ShrinkError::NoVariablesToShrink);
         }
 
         let last_var = self.current_variables - 1;
@@ -206,14 +208,17 @@ impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
 
         // Decrement the number of current variables
         self.current_variables -= 1;
-        true
+        Ok(())
     }
 
     fn degree(&self, variable_index: usize) -> Option<usize> {
-        if variable_index >= self.current_variables || self.has_no_terms() {
+        if variable_index >= self.current_variables {
+            panic!("Indexing an out-of-bounds variable");
+        }
+        // Zero polynomial has degree `None`
+        if self.has_no_terms() {
             return None;
         }
-
         // For multilinear polynomials, the degree is either 0 or 1
         let has_var = self
             .coefficients
@@ -492,7 +497,8 @@ mod tests {
     }
 
     #[test]
-    fn test_degree() {
+    #[should_panic]
+    fn test_out_of_bounds_access() {
         // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4x
         let mut coeffs = HashMap::new();
         coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
@@ -508,7 +514,24 @@ mod tests {
         assert_eq!(poly.degree(2).unwrap(), 1); // z has max degree 1
 
         // Out of bounds variable
-        assert_eq!(poly.degree(3), None);
+        poly.degree(3);
+    }
+
+    #[test]
+    fn test_degree() {
+        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4x
+        let mut coeffs = HashMap::new();
+        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
+        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3));
+        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
+        coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(4));
+
+        let poly = MultilinearPolynomial::from_coefficients(coeffs);
+
+        // Check degrees of variables - for multilinear, degree is at most 1
+        assert_eq!(poly.degree(0).unwrap(), 1); // x has max degree 1
+        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
+        assert_eq!(poly.degree(2).unwrap(), 1); // z has max degree 1
 
         // Total degree - for multilinear, this is the maximum number of variables in any term
         assert_eq!(poly.total_degree().unwrap(), 2); // max is xy with total degree 2
@@ -558,7 +581,7 @@ mod tests {
         // Substitute z = 2
         let success = poly.shrink_last(&F::from(2));
 
-        assert!(success);
+        assert!(success.is_ok());
         assert_eq!(poly.num_variables(), 2); // Now a polynomial in x,y
 
         // New polynomial should be: f(x,y) = 5 + 3xy + 2y*2 + 4*2 = 5 + 3xy + 4y + 8
@@ -579,7 +602,7 @@ mod tests {
         // Substitute y = 3
         let success = poly.shrink_last(&F::from(3));
 
-        assert!(success);
+        assert!(success.is_ok());
         assert_eq!(poly.num_variables(), 1); // Now a polynomial in x
 
         // New polynomial should be: f(x) = 13 + 3x*3 + 4*3 = 13 + 9x + 12 = 25 + 9x
@@ -610,7 +633,7 @@ mod tests {
         assert_eq!(poly.coefficients.len(), 5);
 
         // Shrink the last variable (z)
-        poly.shrink_last(&F::from(2));
+        assert!(poly.shrink_last(&F::from(2)).is_ok());
         assert_eq!(poly.num_variables(), 2);
 
         // Check that no exponent vectors have any bits set beyond the current_variables
@@ -651,13 +674,13 @@ mod tests {
         assert_eq!(poly.num_variables(), 4);
 
         // Shrink polynomial multiple times
-        poly.shrink_last(&F::from(2));
+        assert!(poly.shrink_last(&F::from(2)).is_ok());
         assert_eq!(poly.num_variables(), 3);
 
-        poly.shrink_last(&F::from(3));
+        assert!(poly.shrink_last(&F::from(3)).is_ok());
         assert_eq!(poly.num_variables(), 2);
 
-        poly.shrink_last(&F::from(4));
+        assert!(poly.shrink_last(&F::from(4)).is_ok());
         assert_eq!(poly.num_variables(), 1);
 
         // After shrinking the last variable, we should have a constant polynomial
@@ -682,9 +705,9 @@ mod tests {
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
-        constant_poly.shrink_last(&F::from(1));
-        constant_poly.shrink_last(&F::from(1));
-        constant_poly.shrink_last(&F::from(1));
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
         assert!(!constant_poly.has_no_terms());
         assert!(constant_poly.has_no_variables()); // Now it is constant
 
@@ -728,11 +751,11 @@ mod tests {
         let mut poly = MultilinearPolynomial::zero(1);
 
         // First shrink should succeed
-        assert!(poly.shrink_last(&F::from(1)));
+        assert!(poly.shrink_last(&F::from(1)).is_ok());
         assert_eq!(poly.num_variables(), 0);
 
         // Second shrink should fail since we have no variables left
-        assert!(!poly.shrink_last(&F::from(2)));
+        assert!(poly.shrink_last(&F::from(2)).is_err());
         assert_eq!(poly.num_variables(), 0);
     }
 

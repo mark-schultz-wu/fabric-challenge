@@ -15,6 +15,7 @@ pub use poly::{
     GeneralMultivariatePolynomial, MultilinearPolynomial, MultivariatePolynomial,
     UnivariatePolynomial,
 };
+mod sumcheck;
 fn main() {
     println!("Hello, world!");
 }

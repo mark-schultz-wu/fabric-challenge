@@ -3,6 +3,8 @@ use crate::poly::UnivariatePolynomial;
 use crate::Field;
 use std::collections::HashMap;
 
+use super::traits::ShrinkError;
+
 /// A dense multivariate polynomial represented using a coefficient map
 #[derive(Debug, Clone)]
 pub struct GeneralMultivariatePolynomial<F: Field> {
@@ -163,9 +165,9 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
     /// Substitutes the `value : F` into the last variable of the multivariate polynomial,
     /// yielding a multivariate polynomial of 1 fewer degree.
     /// Returns `true` if the operation succeeded, or `false` if it failed (due to having no free variables).
-    fn shrink_last(&mut self, value: &F) -> bool {
+    fn shrink_last(&mut self, value: &F) -> Result<(), ShrinkError> {
         if self.current_variables == 0 {
-            return false;
+            return Err(ShrinkError::NoVariablesToShrink);
         }
 
         let last_var = self.current_variables - 1;
@@ -203,13 +205,17 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
 
         // Decrement the number of current variables
         self.current_variables -= 1;
-        true
+        Ok(())
     }
 
     /// Returns the degree of the variable of index `variable_index`, or `None`
     /// if this index is larger than the current number of variables.
     fn degree(&self, variable_index: usize) -> Option<usize> {
-        if variable_index >= self.current_variables || self.has_no_terms() {
+        if variable_index >= self.current_variables {
+            panic!("Indexing an out-of-bounds variable");
+        }
+        // Zero polynomial has degree `None`
+        if self.has_no_terms() {
             return None;
         }
 
@@ -469,7 +475,8 @@ mod tests {
     }
 
     #[test]
-    fn test_degree() {
+    #[should_panic]
+    fn test_out_of_bounds_access() {
         // Create polynomial: f(x,y,z) = 5 + 3xy + 2yz^2 + 4x^3
         let mut coeffs = HashMap::new();
         coeffs.insert(vec![0, 0, 0], F::from(5));
@@ -485,7 +492,24 @@ mod tests {
         assert_eq!(poly.degree(2).unwrap(), 2); // z has max degree 2
 
         // Out of bounds variable
-        assert_eq!(poly.degree(3), None);
+        poly.degree(3);
+    }
+
+    #[test]
+    fn test_degree() {
+        // Create polynomial: f(x,y,z) = 5 + 3xy + 2yz^2 + 4x^3
+        let mut coeffs = HashMap::new();
+        coeffs.insert(vec![0, 0, 0], F::from(5));
+        coeffs.insert(vec![1, 1, 0], F::from(3));
+        coeffs.insert(vec![0, 1, 2], F::from(2));
+        coeffs.insert(vec![3, 0, 0], F::from(4));
+
+        let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
+
+        // Check degrees of variables
+        assert_eq!(poly.degree(0).unwrap(), 3); // x has max degree 3
+        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
+        assert_eq!(poly.degree(2).unwrap(), 2); // z has max degree 2
 
         // Total degree
         assert_eq!(poly.total_degree().unwrap(), 3); // max is x^3 with total degree 3
@@ -537,7 +561,7 @@ mod tests {
         // Substitute z = 2
         let success = poly.shrink_last(&F::from(2));
 
-        assert!(success);
+        assert!(success.is_ok());
         assert_eq!(poly.num_variables(), 2); // Now a polynomial in x,y
                                              // max_variables should still be 3
         assert_eq!(poly.max_variables, 3);
@@ -551,7 +575,7 @@ mod tests {
         // Substitute y = 3
         let success = poly.shrink_last(&F::from(3));
 
-        assert!(success);
+        assert!(success.is_ok());
         assert_eq!(poly.num_variables(), 1); // Now a polynomial in x
                                              // max_variables should still be 3
         assert_eq!(poly.max_variables, 3);
@@ -572,15 +596,15 @@ mod tests {
         assert_eq!(poly.num_variables(), 4);
 
         // Shrink polynomial multiple times
-        poly.shrink_last(&F::from(2));
+        assert!(poly.shrink_last(&F::from(2)).is_ok());
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 3);
 
-        poly.shrink_last(&F::from(3));
+        assert!(poly.shrink_last(&F::from(3)).is_ok());
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 2);
 
-        poly.shrink_last(&F::from(4));
+        assert!(poly.shrink_last(&F::from(4)).is_ok());
         assert_eq!(poly.max_variables, 4);
         assert_eq!(poly.num_variables(), 1);
 
@@ -605,7 +629,7 @@ mod tests {
         assert_eq!(poly.coefficients.len(), 5);
 
         // Shrink the last variable (z)
-        poly.shrink_last(&F::from(2));
+        assert!(poly.shrink_last(&F::from(2)).is_ok());
         assert_eq!(poly.num_variables(), 2);
 
         // Check that no exponent vectors have any non-zero values beyond the current_variables
@@ -664,9 +688,9 @@ mod tests {
         assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
 
         // Shrink to make it truly constant
-        constant_poly.shrink_last(&F::from(1));
-        constant_poly.shrink_last(&F::from(1));
-        constant_poly.shrink_last(&F::from(1));
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
+        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
         assert!(!constant_poly.has_no_terms());
         assert!(constant_poly.has_no_variables()); // Now it is constant
 
@@ -711,11 +735,11 @@ mod tests {
         let mut poly = GeneralMultivariatePolynomial::zero(1);
 
         // First shrink should succeed
-        assert!(poly.shrink_last(&F::from(1)));
+        assert!(poly.shrink_last(&F::from(1)).is_ok());
         assert_eq!(poly.num_variables(), 0);
 
         // Second shrink should fail since we have no variables left
-        assert!(!poly.shrink_last(&F::from(2)));
+        assert!(poly.shrink_last(&F::from(2)).is_err());
         assert_eq!(poly.num_variables(), 0);
     }
 }
