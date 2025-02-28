@@ -129,7 +129,7 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
         let last_var = self.current_variables - 1;
 
         // Find the degree of the last variable
-        let max_degree = self.degree(last_var).unwrap_or(0);
+        let max_degree = self.degree(last_var);
 
         // Initialize coefficient vector for the univariate polynomial
         let mut univariate_coeffs = vec![F::zero(); max_degree + 1];
@@ -167,7 +167,7 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
     /// Returns `true` if the operation succeeded, or `false` if it failed (due to having no free variables).
     fn shrink_last(&mut self, value: &F) -> Result<(), ShrinkError> {
         if self.current_variables == 0 {
-            return Err(ShrinkError::NoVariablesToShrink);
+            return Err(ShrinkError::NoVariablesToRemove);
         }
 
         let last_var = self.current_variables - 1;
@@ -208,19 +208,12 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
         Ok(())
     }
 
-    /// Returns the degree of the variable of index `variable_index`, or `None`
-    /// if this index is larger than the current number of variables.
-    fn degree(&self, variable_index: usize) -> Option<usize> {
+    /// Returns a bound on the degree of the variable of index `variable_index`.
+    fn degree(&self, variable_index: usize) -> usize {
         if variable_index >= self.current_variables {
-            panic!("Indexing an out-of-bounds variable");
+            panic!("Out of bounds variable access");
         }
-        // Zero polynomial has degree `None`
-        if self.has_no_terms() {
-            return None;
-        }
-
-        let max_degree = self
-            .coefficients
+        self.coefficients
             .keys()
             .filter_map(|exponents| {
                 if exponents.len() > variable_index {
@@ -229,47 +222,8 @@ impl<F: Field> MultivariatePolynomial<F> for GeneralMultivariatePolynomial<F> {
                     None
                 }
             })
-            .max();
-
-        max_degree
-    }
-
-    /// Checks if the polynomial is the zero polynomial
-    fn has_no_terms(&self) -> bool {
-        self.coefficients.values().all(|v| v.is_zero())
-    }
-
-    /// Computes the total degree of the polynomial.
-    /// This is the maximum of the sums of the degrees of each term.
-    /// Returns `None` for the zero polynomial
-    fn total_degree(&self) -> Option<usize> {
-        if self.has_no_terms() {
-            return None;
-        }
-
-        let max_degree = self
-            .coefficients
-            .keys()
-            .map(|exponents| {
-                // Only consider current variables in total degree calculation
-                exponents.iter().take(self.current_variables).sum()
-            })
-            .max();
-
-        max_degree
-    }
-
-    /// Returns `true` if `self` has no free variables, and otherwise returns `false`.
-    fn has_no_variables(&self) -> bool {
-        self.current_variables == 0
-    }
-
-    /// Returns the maximum degree of any single variable in the polynomial
-    /// `None` for the 0 polynomial (degree -\infty)
-    fn max_single_degree(&self) -> Option<usize> {
-        (0..self.current_variables)
-            .flat_map(|i| self.degree(i))
             .max()
+            .unwrap_or(0)
     }
 
     fn sum_over_boolean_hypercube(&self) -> F {
@@ -343,14 +297,12 @@ mod tests {
 
         // Should have 0 variables and be recognized as zero
         assert_eq!(zero_poly.num_variables(), 0);
-        assert!(zero_poly.has_no_terms());
 
         // Create the zero polynomial explicitly with 3 variables
         let zero_poly_3vars = GeneralMultivariatePolynomial::zero(3);
 
         // Should have 3 variables and be recognized as zero
         assert_eq!(zero_poly_3vars.num_variables(), 3);
-        assert!(zero_poly_3vars.has_no_terms());
 
         // Evaluation should always give zero
         assert_eq!(
@@ -387,7 +339,6 @@ mod tests {
 
         // Should be the zero polynomial with 3 variables
         assert_eq!(poly.num_variables(), 3);
-        assert!(poly.has_no_terms());
     }
 
     #[test]
@@ -487,9 +438,9 @@ mod tests {
         let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Check degrees of variables
-        assert_eq!(poly.degree(0).unwrap(), 3); // x has max degree 3
-        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
-        assert_eq!(poly.degree(2).unwrap(), 2); // z has max degree 2
+        assert_eq!(poly.degree(0), 3); // x has max degree 3
+        assert_eq!(poly.degree(1), 1); // y has max degree 1
+        assert_eq!(poly.degree(2), 2); // z has max degree 2
 
         // Out of bounds variable
         poly.degree(3);
@@ -507,15 +458,9 @@ mod tests {
         let poly = GeneralMultivariatePolynomial::from_coefficients(coeffs);
 
         // Check degrees of variables
-        assert_eq!(poly.degree(0).unwrap(), 3); // x has max degree 3
-        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
-        assert_eq!(poly.degree(2).unwrap(), 2); // z has max degree 2
-
-        // Total degree
-        assert_eq!(poly.total_degree().unwrap(), 3); // max is x^3 with total degree 3
-
-        // Max single degree
-        assert_eq!(poly.max_single_degree().unwrap(), 3); // x has max degree 3
+        assert_eq!(poly.degree(0), 3); // x has max degree 3
+        assert_eq!(poly.degree(1), 1); // y has max degree 1
+        assert_eq!(poly.degree(2), 2); // z has max degree 2
     }
 
     #[test]
@@ -671,37 +616,6 @@ mod tests {
             F::from(14), // 7*2 = 14
             "New xy term should have correct coefficient"
         );
-    }
-
-    #[test]
-    fn test_has_no_variables_and_has_no_terms() {
-        // Zero polynomial
-        let zero_poly = GeneralMultivariatePolynomial::<F>::zero(0);
-        assert!(zero_poly.has_no_terms());
-        assert!(zero_poly.has_no_variables());
-
-        // Constant polynomial
-        let mut constant_coeffs = HashMap::new();
-        constant_coeffs.insert(vec![0, 0, 0], F::from(5));
-        let mut constant_poly = GeneralMultivariatePolynomial::from_coefficients(constant_coeffs);
-        assert!(!constant_poly.has_no_terms());
-        assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
-
-        // Shrink to make it truly constant
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(!constant_poly.has_no_terms());
-        assert!(constant_poly.has_no_variables()); // Now it is constant
-
-        // Non-constant polynomial
-        let mut non_constant_coeffs = HashMap::new();
-        non_constant_coeffs.insert(vec![0, 0], F::from(5));
-        non_constant_coeffs.insert(vec![1, 0], F::from(3));
-        let non_constant_poly =
-            GeneralMultivariatePolynomial::from_coefficients(non_constant_coeffs);
-        assert!(!non_constant_poly.has_no_terms());
-        assert!(!non_constant_poly.has_no_variables());
     }
 
     #[test]

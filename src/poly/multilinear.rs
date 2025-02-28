@@ -1,768 +1,445 @@
+use super::traits::ShrinkError;
 use crate::poly::MultivariatePolynomial;
 use crate::poly::UnivariatePolynomial;
 use crate::Field;
-use bitvec::prelude::*;
-use std::collections::HashMap;
 
-use super::traits::ShrinkError;
-
-/// A multilinear polynomial representation where each variable
-/// has an exponent of at most 1 in any term.
+/// A multilinear polynomial representation using evaluations on the boolean hypercube
 #[derive(Debug, Clone)]
 pub struct MultilinearPolynomial<F: Field> {
-    /// Maps exponent vectors (as bitvecs) to coefficients
-    /// Each bit indicates whether the corresponding variable appears (1) or not (0)
-    coefficients: HashMap<BitVec, F>,
-
-    /// Maximum number of variables in the polynomial (constant after creation)
-    max_variables: usize,
+    /// Evaluations on all points of the boolean hypercube, in lexicographic order
+    /// e.g.
+    /// f(0,0,0), f(0,0,1), f(0,1,0), f(0,1,1), f(1,0,0), f(1,0,1), f(1,1,0), f(1,1,1)
+    /// In other words, if [x]_b writes x in (fixed-length) binary, the ordering is
+    /// [f([0]_b), f([1]_b), f([2]_b),...]
+    evaluations: Vec<F>,
 
     /// Current number of variables
-    /// Is decremented after calling `.shrink_last`
     current_variables: usize,
 }
 
 impl<F: Field> MultilinearPolynomial<F> {
-    /// Create a new empty multilinear polynomial with the specified number of variables
-    pub fn new(num_variables: usize) -> Self {
+    /// Create a new multilinear polynomial from evaluations on the boolean hypercube
+    pub fn from_evaluations_on_hypercube(evaluations: Vec<F>) -> Self {
+        let current_variables = evaluations.len().ilog2() as usize;
+        assert_eq!(
+            1 << current_variables,
+            evaluations.len(),
+            "Must input a set of evaluations of length 2^k"
+        );
         Self {
-            coefficients: HashMap::new(),
-            max_variables: num_variables,
-            current_variables: num_variables,
+            evaluations,
+            current_variables,
         }
     }
 
-    /// Construct a polynomial from a map of exponent vectors to coefficients
-    pub fn from_coefficients(mut coefficients: HashMap<BitVec, F>) -> Self {
-        // First, determine the maximum number of variables
-        let max_variables = coefficients.keys().map(|bv| bv.len()).max().unwrap_or(0);
-
-        // Remove keys that have zero value
-        coefficients.retain(|_, v| !v.is_zero());
-
-        // Normalize all exponent vectors to have the same length
-        let normalized_coefficients = coefficients
-            .into_iter()
-            .map(|(mut exponents, coefficient)| {
-                // Ensure the exponent vector has the correct length
-                if exponents.len() < max_variables {
-                    exponents.resize(max_variables, false);
-                }
-                (exponents, coefficient)
-            })
-            .collect();
-
-        Self {
-            coefficients: normalized_coefficients,
-            max_variables,
-            current_variables: max_variables,
-        }
-    }
-
-    /// Sets the coefficient for a given exponent vector
-    pub fn set_coefficient(&mut self, mut exponents: BitVec, coefficient: F) {
-        if exponents.len() > self.max_variables {
-            panic!("Exponent vector too long");
-        }
-
-        // Ensure the exponent vector has the correct length
-        if exponents.len() < self.max_variables {
-            exponents.resize(self.max_variables, false);
-        }
-
-        if coefficient.is_zero() {
-            self.coefficients.remove(&exponents);
-        } else {
-            self.coefficients.insert(exponents, coefficient);
-        }
-    }
-
-    /// Gets the coefficient for a given exponent vector, if it exists
-    pub fn get_coefficient(&self, exponents: &BitVec) -> Option<&F> {
-        if exponents.len() > self.max_variables {
-            return None;
-        }
-
-        // Create a properly sized exponent vector if needed
-        if exponents.len() < self.max_variables {
-            let mut full_exponents = exponents.clone();
-            full_exponents.resize(self.max_variables, false);
-            self.coefficients.get(&full_exponents)
-        } else {
-            self.coefficients.get(exponents)
-        }
-    }
-
-    /// Creates a zero polynomial with the specified number of variables
+    /// Create a zero polynomial with the specified number of variables
     pub fn zero(num_variables: usize) -> Self {
+        let current_variables = num_variables;
+        let evaluations = vec![F::zero(); 1 << current_variables];
         Self {
-            coefficients: HashMap::new(),
-            max_variables: num_variables,
-            current_variables: num_variables,
+            evaluations,
+            current_variables,
+        }
+    }
+
+    /// Create a constant polynomial with the specified number of variables
+    pub fn constant(num_variables: usize, value: F) -> Self {
+        let current_variables = num_variables;
+        let evaluations = vec![value; 1 << current_variables];
+        Self {
+            evaluations,
+            current_variables,
         }
     }
 }
 
 impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {
+    /// Number of currently free variables in the Multivariate Polynomial
     fn num_variables(&self) -> usize {
         self.current_variables
     }
 
-    fn evaluate(&self, point: &[F]) -> F {
-        if point.len() != self.current_variables {
+    /// Evaluate multilinear polynomial at a point using folding/memoization
+    /// See for example Lemma 3.8 of "Proofs, Arguments, and Zero-Knowledge"
+    ///
+    /// The algorithm evaluates a multilinear polynomial P in variables x_1,...,x_n at point r=(r_1,...,r_n).
+    /// For each j from 0 to n, we maintain a table A^j of size 2^(n-j) where:
+    /// - A^0 contains P evaluated at all 2^n binary inputs
+    /// - A^j contains P (with the first j variables set to r values), and remaining variables as binary.
+    /// - A^n is the final evaluation at point r
+    ///
+    /// The recurrence relation is:
+    /// A^j[b_{j+1},...,b_n] = (1-r_j) * A^{j-1}[0,b_{j+1},...,b_n] + r_j * A^{j-1}[1,b_{j+1},...,b_n]
+    ///
+    /// Note that the points 0,b_{j+1},...,b_n and 1,b_{j+1},...,b_n, when
+    /// interpreted as integers, differ by 2^{n-j}.
+    fn evaluate(&self, r: &[F]) -> F {
+        if r.len() != self.current_variables {
             panic!("Incorrect number of variables provided for evaluation");
         }
 
-        let mut result = F::zero();
+        // Start with table A^0: evaluations at all binary inputs
+        let mut table = self.evaluations[..(1 << self.current_variables)].to_vec();
+        let mut table_size = table.len();
 
-        for (exponents, coefficient) in &self.coefficients {
-            let mut term_value = coefficient.clone();
+        // Process each variable r_j, building table A^j from A^{j-1}
+        for r_j in r.iter().take(self.current_variables) {
+            table_size /= 2;
 
-            // For each set bit in the exponent vector, multiply by the corresponding point value
-            for var_idx in 0..self.current_variables {
-                if exponents[var_idx] {
-                    term_value *= &point[var_idx];
-                }
+            // For each binary assignment to remaining variables (b_{j+1},...,b_n)
+            for idx in 0..table_size {
+                // Access A^{j-1} entries with w_j=0 and w_j=1, keeping other bits the same
+                let val_with_bit_0 = &table[idx];
+                let val_with_bit_1 = &table[idx + table_size];
+
+                let term0 = (F::one() - r_j) * val_with_bit_0;
+                let term1 = r_j.clone() * val_with_bit_1;
+                table[idx] = term0 + term1;
             }
-            // All of the higher variables are 0 (this is an invariant we are maintaining, might as well check it)
-            debug_assert!((0..self.max_variables)
-                .skip(self.current_variables)
-                .all(|i| !exponents[i]));
-
-            result += &term_value;
         }
 
-        result
+        // Final result is A^n (a single value) = P(r_1,...,r_n)
+        table.swap_remove(0)
     }
 
+    /// Extract the univariate polynomial in the last variable
     fn univariate_slice_last(&self) -> UnivariatePolynomial<F> {
-        if self.current_variables == 0 {
-            return UnivariatePolynomial::new(vec![self.evaluate(&[])]);
+        let n = self.current_variables;
+
+        // For a multilinear polynomial, the resulting univariate is always
+        // degree 1, h(x) := a + b*x. Note that
+        //     * h(x) = \sum_{bi} p(b1,b2,...,bk,x), where
+        //     * a := h(0), b := h(1) - h(0)
+        let mut coefficients = vec![F::zero(); 2];
+
+        // Sum over all boolean assignments to the first n-1 variables
+        for prefix in 0..(1 << (n - 1)) {
+            // idx_0: prefix followed by 0
+            let idx_0 = prefix << 1;
+            // idx_1: prefix followed by 1
+            let idx_1 = idx_0 | 1;
+
+            // a = \sum_i p(b1,...,bk,0)
+            coefficients[0] += &self.evaluations[idx_0];
+            // b = \sum_i p(b1,...,bk,1) - p(b1,...,bk,0)
+            coefficients[1] += &self.evaluations[idx_1];
+            coefficients[1] -= &self.evaluations[idx_0];
         }
-
-        // For a multilinear polynomial, we only need coefficients for x^0 and x^1
-        let mut const_coeff = F::zero();
-        let mut linear_coeff = F::zero();
-
-        let last_var = self.current_variables - 1;
-
-        for (exponents, coefficient) in &self.coefficients {
-            let last_var_present = exponents[last_var];
-
-            // Calculate how many points in the boolean hypercube contribute to this term
-            // If exponents[i] = 1, only Xi = 1 contributes, e.g. we do nothing.
-            // If exponents[i] = 0, both Xi \in\{0,1} contribute, e.g. we multiply the total by two.
-            let free_vars = (0..last_var).filter(|&i| !exponents[i]).count();
-
-            // 2^free_vars is the multiplier
-            let multiplier = 1 << free_vars;
-            let mut contribution = F::from(multiplier as u32);
-            contribution *= coefficient;
-
-            // Add to the correct term of our linear (in last_var) poly.
-            if last_var_present {
-                linear_coeff += &contribution;
-            } else {
-                const_coeff += &contribution;
-            }
-        }
-
-        UnivariatePolynomial::new(vec![const_coeff, linear_coeff])
+        UnivariatePolynomial::new(coefficients)
     }
 
+    /// Substitute the last variable with a field element
+    ///
+    /// Reduces an n-variable multilinear polynomial to an (n-1)-variable polynomial
+    /// by evaluating the last variable at the given value.
+    ///
+    /// Uses the same technique as the evaluate function,
+    /// but applies it only to the last variable.
     fn shrink_last(&mut self, value: &F) -> Result<(), ShrinkError> {
+        // Check if we have any variables to remove
         if self.current_variables == 0 {
-            return Err(ShrinkError::NoVariablesToShrink);
+            return Err(ShrinkError::NoVariablesToRemove);
         }
 
-        let last_var = self.current_variables - 1;
+        // We'll use the folding technique, but only for the last variable
+        let new_size = 1 << (self.current_variables - 1);
+        for idx in 0..new_size {
+            // last bit 0
+            let eval_with_0 = &self.evaluations[idx << 1];
+            // last bit 1
+            let eval_with_1 = &self.evaluations[(idx << 1) | 1];
+            // computing (1 - value) * eval_with_0 + value * eval_with_1
+            let mut one_minus_value = F::one();
+            one_minus_value -= value;
 
-        // Identify keys with the last variable set to 1
-        let keys_to_process: Vec<BitVec> = self
-            .coefficients
-            .keys()
-            .filter(|exp| exp[last_var])
-            .cloned()
-            .collect();
+            let term0 = one_minus_value * eval_with_0;
+            let term1 = value.clone() * eval_with_1;
 
-        // Process these keys
-        for mut exponents in keys_to_process {
-            // Remove the entry with the last variable set
-            if let Some(mut coeff) = self.coefficients.remove(&exponents) {
-                // Set the last variable to 0
-                exponents.set(last_var, false);
-
-                // Calculate the substituted value (for multilinear, always multiply by the value once)
-                coeff *= value;
-
-                // Only update if the new value is non-zero
-                if !coeff.is_zero() {
-                    // Update or add the entry with the substituted value
-                    *self.coefficients.entry(exponents).or_insert(F::zero()) += coeff;
-                }
-            }
+            self.evaluations[idx] = term0 + term1;
         }
-
-        // Clean up any zero coefficients that might have resulted from additions
-        self.coefficients.retain(|_, v| !v.is_zero());
-
-        // Decrement the number of current variables
+        // Truncate the evaluations array to the new size
+        self.evaluations.truncate(new_size);
         self.current_variables -= 1;
         Ok(())
     }
 
-    fn degree(&self, variable_index: usize) -> Option<usize> {
+    /// For multilinear polynomials, the degree of any variable is at most 1.
+    fn degree(&self, variable_index: usize) -> usize {
         if variable_index >= self.current_variables {
-            panic!("Indexing an out-of-bounds variable");
+            panic!("Out of bounds variable access");
         }
-        // Zero polynomial has degree `None`
-        if self.has_no_terms() {
-            return None;
-        }
-        // For multilinear polynomials, the degree is either 0 or 1
-        let has_var = self
-            .coefficients
-            .iter()
-            .any(|(exponents, _)| exponents[variable_index]);
-
-        if has_var {
-            Some(1)
-        } else {
-            Some(0)
-        }
+        1
     }
 
-    fn has_no_terms(&self) -> bool {
-        self.coefficients.is_empty()
-    }
-
-    fn total_degree(&self) -> Option<usize> {
-        if self.has_no_terms() {
-            return None;
-        }
-
-        let mut max_degree = 0;
-
-        for exponents in self.coefficients.keys() {
-            // Count the number of set bits (variables with exponent 1)
-            let mut term_degree = 0;
-            for i in 0..self.current_variables {
-                if exponents[i] {
-                    term_degree += 1;
-                }
-            }
-
-            if term_degree > max_degree {
-                max_degree = term_degree;
-            }
-        }
-
-        Some(max_degree)
-    }
-
+    /// Sums the polynomial over all possible evaluations
     fn sum_over_boolean_hypercube(&self) -> F {
-        let mut sum = F::zero();
-
-        for (exponents, coefficient) in &self.coefficients {
-            // Each variable with bit=0 doubles the count of contributing points
-            let free_vars = (0..self.current_variables)
-                .filter(|&i| !exponents[i])
-                .count();
-
-            // 2^free_vars contributing points
-            let multiplier = 1 << free_vars;
-            let mut contributing = F::from(multiplier as u32);
-            contributing *= coefficient;
-            sum += contributing;
-        }
-
-        sum
+        self.evaluations.iter().fold(F::zero(), |acc, x| acc + x)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::clone_on_copy)]
     use super::*;
-    use crate::MontgomeryFp;
+    use crate::{Field, MontgomeryFp};
+    use std::collections::HashMap;
 
     // Using a small prime (251) for testing
     type F = MontgomeryFp<251>;
 
-    // Helper function to create a BitVec from a list of 0s and 1s
-    fn create_bitvec(values: &[usize]) -> BitVec {
-        let mut bv = BitVec::new();
-        for &val in values {
-            match val {
-                0 => bv.push(false),
-                1 => bv.push(true),
-                _ => panic!("Invalid value in exponent vector: only 0 and 1 are allowed for multilinear polynomials")
-            }
+    // Helper function to convert coefficient representation to evaluations on boolean hypercube
+    fn coeffs_to_evaluations<F: Field>(coeffs: &HashMap<Vec<usize>, F>) -> Vec<F> {
+        // Infer number of variables from the coefficient map
+        let num_vars = if coeffs.is_empty() {
+            0
+        } else {
+            coeffs.keys().map(|exps| exps.len()).max().unwrap_or(0)
+        };
+
+        // If no variables, just return the constant term or zero
+        if num_vars == 0 {
+            return vec![coeffs.get(&vec![]).cloned().unwrap_or_else(F::zero)];
         }
-        bv
+
+        let mut evals = vec![F::zero(); 1 << num_vars];
+
+        // Iterate through all possible evaluation points in the boolean hypercube
+        for point_idx in 0..(1 << num_vars) {
+            let mut eval = F::zero();
+
+            // For each monomial with its coefficient
+            for (exponents, coeff) in coeffs.iter() {
+                let mut padded_exponents = exponents.clone();
+                // Pad the exponents vector if needed
+                if padded_exponents.len() < num_vars {
+                    padded_exponents.resize(num_vars, 0);
+                }
+
+                // Calculate monomial value for this point on the boolean cube
+                let mut term_value = coeff.clone();
+
+                // Check each variable's contribution
+                for i in 0..num_vars {
+                    if padded_exponents[i] > 0 {
+                        // Variable has a non-zero exponent
+                        // Check if this bit is set in point_idx
+                        // The MSB corresponds to variable 0, LSB to variable num_vars-1
+                        let bit_pos = num_vars - 1 - i;
+                        let var_bit = (point_idx >> bit_pos) & 1;
+
+                        if var_bit == 0 {
+                            // If any variable with non-zero exponent is zero, the whole term is zero
+                            term_value = F::zero();
+                            break;
+                        }
+                        // If var_bit is 1, it doesn't matter what the exponent is on the boolean cube
+                    }
+                    // If exponent is 0, the variable doesn't contribute (x^0 = 1)
+                }
+
+                // Add the term's value to the evaluation
+                eval += term_value;
+            }
+
+            evals[point_idx] = eval;
+        }
+
+        evals
     }
 
     #[test]
-    fn test_creation_and_getters() {
-        // Create a simple multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz
+    fn test_from_evaluations() {
+        // f(x,y) = 1 + 2x + 3y + 4xy
         let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![1, 1], F::from(4)); // xy term
 
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-
-        // Check number of variables
-        assert_eq!(poly.num_variables(), 3);
-
-        // Check coefficients
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        // Evaluations should be:
+        // f(0,0) = 1
+        // f(0,1) = 1 + 3 = 4
+        // f(1,0) = 1 + 2 = 3
+        // f(1,1) = 1 + 2 + 3 + 4 = 10
         assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 0, 0])).unwrap(),
-            F::from(5)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[1, 1, 0])).unwrap(),
-            F::from(3)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 1, 1])).unwrap(),
-            F::from(2)
+            evaluations,
+            vec![F::from(1), F::from(4), F::from(3), F::from(10)]
         );
 
-        // Check non-existent coefficients
-        assert!(poly.get_coefficient(&create_bitvec(&[1, 0, 0])).is_none());
-        assert!(poly.get_coefficient(&create_bitvec(&[0, 0, 1])).is_none());
-
-        // Check oversized exponent vector
-        assert!(poly
-            .get_coefficient(&create_bitvec(&[1, 1, 1, 1]))
-            .is_none());
+        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
+        assert_eq!(poly.num_variables(), 2);
     }
 
     #[test]
-    fn test_zero_polynomial() {
-        // Create an empty polynomial (should be the zero polynomial)
-        let empty_coeffs: HashMap<BitVec, F> = HashMap::new();
-        let zero_poly = MultilinearPolynomial::from_coefficients(empty_coeffs);
+    fn test_zero_and_constant() {
+        // Test zero polynomial
+        let zero = MultilinearPolynomial::<F>::zero(2);
+        assert_eq!(zero.num_variables(), 2);
+        assert_eq!(zero.evaluations.len(), 4);
+        for eval in &zero.evaluations {
+            assert_eq!(*eval, F::zero());
+        }
 
-        // Should have 0 variables and be recognized as zero
-        assert_eq!(zero_poly.num_variables(), 0);
-        assert!(zero_poly.has_no_terms());
-        assert!(zero_poly.has_no_variables());
-
-        // Create the zero polynomial explicitly with 3 variables
-        let zero_poly_3vars = MultilinearPolynomial::zero(3);
-
-        // Should have 3 variables and be recognized as zero
-        assert_eq!(zero_poly_3vars.num_variables(), 3);
-        assert!(zero_poly_3vars.has_no_terms());
-
-        // Evaluation should always give zero
-        assert_eq!(
-            zero_poly_3vars.evaluate(&[F::from(1), F::from(2), F::from(3)]),
-            F::zero()
-        );
+        // Test constant polynomial
+        let constant = MultilinearPolynomial::constant(3, F::from(5));
+        assert_eq!(constant.num_variables(), 3);
+        assert_eq!(constant.evaluations.len(), 8);
+        for eval in &constant.evaluations {
+            assert_eq!(*eval, F::from(5));
+        }
     }
 
     #[test]
-    fn test_zero_coefficient_removal() {
-        // Create polynomial with some zero coefficients
+    fn test_evaluate() {
+        // f(x,y) = 1 + 2x + 3y + 4xy
         let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        coeffs.insert(create_bitvec(&[1, 0, 0]), F::zero()); // This should be removed
-        coeffs.insert(create_bitvec(&[0, 1, 0]), F::from(3));
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![1, 1], F::from(4)); // xy term
 
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
-        // Should only have the non-zero coefficients
-        assert!(poly.get_coefficient(&create_bitvec(&[1, 0, 0])).is_none());
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 0, 0])).unwrap(),
-            F::from(5)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 1, 0])).unwrap(),
-            F::from(3)
-        );
-    }
+        // Evaluate at (0,0): 1
+        let result1 = poly.evaluate(&[F::from(0), F::from(0)]);
+        assert_eq!(result1, F::from(1));
 
-    #[test]
-    fn test_polynomial_with_all_zero_coefficients() {
-        // Create a polynomial where all coefficients are zero
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::zero());
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::zero());
-        coeffs.insert(create_bitvec(&[0, 0, 1]), F::zero());
+        // Evaluate at (1,0): 1 + 2 = 3
+        let result2 = poly.evaluate(&[F::from(1), F::from(0)]);
+        assert_eq!(result2, F::from(3));
 
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
+        // Evaluate at (0,1): 1 + 3 = 4
+        let result3 = poly.evaluate(&[F::from(0), F::from(1)]);
+        assert_eq!(result3, F::from(4));
 
-        // Should be the zero polynomial with 3 variables
-        assert_eq!(poly.num_variables(), 3);
-        assert!(poly.has_no_terms());
-    }
+        // Evaluate at (1,1): 1 + 2 + 3 + 4 = 10
+        let result4 = poly.evaluate(&[F::from(1), F::from(1)]);
+        assert_eq!(result4, F::from(10));
 
-    #[test]
-    fn test_set_coefficient() {
-        // Create a zero polynomial with 3 variables
-        let mut poly = MultilinearPolynomial::zero(3);
+        // Test at non-binary points - using field values that aren't just 0 or 1
+        let x = F::from(123);
+        let y = F::from(45);
 
-        // Set some coefficients
-        poly.set_coefficient(create_bitvec(&[1, 0, 0]), F::from(5)); // x term
-        poly.set_coefficient(create_bitvec(&[0, 1, 0]), F::from(3)); // y term
-        poly.set_coefficient(create_bitvec(&[0, 0, 1]), F::from(2)); // z term
+        // Direct calculation: 1 + 2x + 3y + 4xy
+        let expected = F::from(1)
+            + F::from(2) * x.clone()
+            + F::from(3) * y.clone()
+            + F::from(4) * x.clone() * y.clone();
 
-        // Check coefficients were set correctly
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[1, 0, 0])).unwrap(),
-            F::from(5)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 1, 0])).unwrap(),
-            F::from(3)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 0, 1])).unwrap(),
-            F::from(2)
-        );
-
-        // Update an existing coefficient
-        poly.set_coefficient(create_bitvec(&[1, 0, 0]), F::from(7)); // Change x term
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[1, 0, 0])).unwrap(),
-            F::from(7)
-        );
-
-        // Set a coefficient to zero should remove it
-        poly.set_coefficient(create_bitvec(&[0, 1, 0]), F::zero());
-        assert!(poly.get_coefficient(&create_bitvec(&[0, 1, 0])).is_none());
-    }
-
-    #[test]
-    fn test_num_variables() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-        assert_eq!(poly.num_variables(), 3);
-
-        // Create multilinear polynomial with 4 variables: f(x,y,z,w) = 5 + 3xy + 2yz + w
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1, 0]), F::from(2)); // yz term
-        coeffs.insert(create_bitvec(&[0, 0, 0, 1]), F::from(1)); // w term
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-        assert_eq!(poly.num_variables(), 4);
-    }
-
-    #[test]
-    fn test_polynomial_evaluation() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-
-        // Evaluate at (1,1,1): 5 + 3*1*1 + 2*1*1 = 5 + 3 + 2 = 10
-        let result1 = poly.evaluate(&[F::from(1), F::from(1), F::from(1)]);
-        assert_eq!(result1, F::from(10));
-
-        // Evaluate at (2,3,4): 5 + 3*2*3 + 2*3*4 = 5 + 18 + 24 = 47
-        let result2 = poly.evaluate(&[F::from(2), F::from(3), F::from(4)]);
-        assert_eq!(result2, F::from(47));
-
-        // Evaluate at (0,0,0): 5 + 3*0*0 + 2*0*0 = 5
-        let result3 = poly.evaluate(&[F::from(0), F::from(0), F::from(0)]);
-        assert_eq!(result3, F::from(5));
-    }
-
-    #[test]
-    #[should_panic(expected = "Incorrect number of variables provided for evaluation")]
-    fn test_evaluation_wrong_num_vars() {
-        // Create polynomial: f(x,y,z) = 5 + 3xy + 2yz
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3));
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-
-        // Try to evaluate with only 2 variables
-        poly.evaluate(&[F::from(1), F::from(2)]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_out_of_bounds_access() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4x
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3));
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
-        coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(4));
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-
-        // Check degrees of variables - for multilinear, degree is at most 1
-        assert_eq!(poly.degree(0).unwrap(), 1); // x has max degree 1
-        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
-        assert_eq!(poly.degree(2).unwrap(), 1); // z has max degree 1
-
-        // Out of bounds variable
-        poly.degree(3);
-    }
-
-    #[test]
-    fn test_degree() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4x
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3));
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2));
-        coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(4));
-
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
-
-        // Check degrees of variables - for multilinear, degree is at most 1
-        assert_eq!(poly.degree(0).unwrap(), 1); // x has max degree 1
-        assert_eq!(poly.degree(1).unwrap(), 1); // y has max degree 1
-        assert_eq!(poly.degree(2).unwrap(), 1); // z has max degree 1
-
-        // Total degree - for multilinear, this is the maximum number of variables in any term
-        assert_eq!(poly.total_degree().unwrap(), 2); // max is xy with total degree 2
-
-        // Max single degree - for multilinear, this is always 1 if variables are present
-        assert_eq!(poly.max_single_degree().unwrap(), 1);
+        let result5 = poly.evaluate(&[x, y]);
+        assert_eq!(result5, expected);
     }
 
     #[test]
     fn test_univariate_slice_last() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4z
+        // f(x,y) = 1 + 2x + 3y + 4xy
         let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
-        coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![1, 1], F::from(4)); // xy term
 
-        let poly = MultilinearPolynomial::from_coefficients(coeffs);
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
-        // Slice the last variable (z)
+        // The univariate slice in y should be:
+        // g(y) = sum_{x in {0,1}} f(x,y)
+        // g(y) = f(0,y) + f(1,y)
+        // g(y) = (1 + 3y) + (1 + 2 + 3y + 4y) = 4 + 6y + 4y = 4 + 10y
+
         let univariate = poly.univariate_slice_last();
-
-        // The correct result should be: g(z) = 23 + 20z
-        // This is because:
-        // - The constant term 5 appears in all 4 combinations: 5*4 = 20
-        // - The xy term 3 appears only when x=1, y=1: 3*1 = 3
-        // - The yz term 2z appears when y=1 (and x can be 0 or 1): 2z*2 = 4z
-        // - The z term 4z appears in all 4 combinations: 4z*4 = 16z
-        // So g(z) = 20 + 3 + 4z + 16z = 23 + 20z
-
         assert_eq!(univariate.coefficients.len(), 2);
-        assert_eq!(univariate.coefficients[0], F::from(23)); // Constant term: 5*4 + 3*1 = 23
-        assert_eq!(univariate.coefficients[1], F::from(20)); // z coefficient: 4*4 + 2*2 = 20
+        assert_eq!(univariate.coefficients[0], F::from(4)); // Constant term: 1 + 1 + 2 = 4
+        assert_eq!(univariate.coefficients[1], F::from(10)); // y coefficient: 3 + 3 + 4 = 10
     }
 
     #[test]
     fn test_shrink_last() {
-        // Create multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz + 4z
+        // f(x,y,z) = 1 + 2x + 3y + 4z + 5xy + 6xz + 7yz + 8xyz
         let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // Constant term
-        coeffs.insert(create_bitvec(&[1, 1, 0]), F::from(3)); // xy term
-        coeffs.insert(create_bitvec(&[0, 1, 1]), F::from(2)); // yz term
-        coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![0, 0, 1], F::from(4)); // z term
+        coeffs.insert(vec![1, 1], F::from(5)); // xy term
+        coeffs.insert(vec![1, 0, 1], F::from(6)); // xz term
+        coeffs.insert(vec![0, 1, 1], F::from(7)); // yz term
+        coeffs.insert(vec![1, 1, 1], F::from(8)); // xyz term
 
-        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        let mut poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
         // Substitute z = 2
-        let success = poly.shrink_last(&F::from(2));
-
-        assert!(success.is_ok());
-        assert_eq!(poly.num_variables(), 2); // Now a polynomial in x,y
-
-        // New polynomial should be: f(x,y) = 5 + 3xy + 2y*2 + 4*2 = 5 + 3xy + 4y + 8
-        // Simplified: f(x,y) = 13 + 3xy + 4y
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 0])).unwrap(),
-            F::from(13)
-        ); // 5 + 8 = 13
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[1, 1])).unwrap(),
-            F::from(3)
-        );
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0, 1])).unwrap(),
-            F::from(4)
-        ); // 2*2 = 4
-
-        // Substitute y = 3
-        let success = poly.shrink_last(&F::from(3));
-
-        assert!(success.is_ok());
-        assert_eq!(poly.num_variables(), 1); // Now a polynomial in x
-
-        // New polynomial should be: f(x) = 13 + 3x*3 + 4*3 = 13 + 9x + 12 = 25 + 9x
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[0])).unwrap(),
-            F::from(25)
-        ); // 13 + 12 = 25
-        assert_eq!(
-            *poly.get_coefficient(&create_bitvec(&[1])).unwrap(),
-            F::from(9)
-        ); // 3*3 = 9
-    }
-
-    #[test]
-    fn test_no_irrelevant_ones_after_shrink() {
-        // Create a simple multilinear polynomial with 3 variables
-        let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5)); // constant term
-        coeffs.insert(create_bitvec(&[1, 0, 0]), F::from(2)); // x term
-        coeffs.insert(create_bitvec(&[0, 1, 0]), F::from(3)); // y term
-        coeffs.insert(create_bitvec(&[0, 0, 1]), F::from(4)); // z term
-        coeffs.insert(create_bitvec(&[1, 1, 1]), F::from(7)); // xyz term
-
-        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
-        assert_eq!(poly.num_variables(), 3);
-
-        // Initial state should have the right number of terms
-        assert_eq!(poly.coefficients.len(), 5);
-
-        // Shrink the last variable (z)
         assert!(poly.shrink_last(&F::from(2)).is_ok());
         assert_eq!(poly.num_variables(), 2);
 
-        // Check that no exponent vectors have any bits set beyond the current_variables
-        for exponent in poly.coefficients.keys() {
-            assert_eq!(
-                exponent.len(),
-                3,
-                "Exponent vector length should remain the same"
-            );
+        // The resulting polynomial should be:
+        // f(x,y) = 1 + 2x + 3y + 4*2 + 5xy + 6x*2 + 7y*2 + 8xy*2
+        //        = 1 + 2x + 3y + 8 + 5xy + 12x + 14y + 16xy
+        //        = 9 + 14x + 17y + 21xy
 
-            // Check that no 1s appear in positions at or after current_variables
-            for i in poly.num_variables()..exponent.len() {
-                assert!(
-                    !exponent[i],
-                    "No 1s should appear in positions beyond current_variables"
-                );
-            }
-        }
-
-        // Terms with z=1 should have been merged with their z=0 counterparts
-        // So [0,0,1] merges with [0,0,0].
-        // [1,1,1] gets sent to [1,1,0], which was not present, so there are still
-        // the 4 terms [0,0,0], [1,0,0], [0,1,0], [1,1,0].
-        assert_eq!(
-            dbg!(poly.coefficients).len(),
-            4,
-            "After shrinking z, terms should be merged appropriately"
-        );
+        // Evaluate at some test points to verify
+        assert_eq!(poly.evaluate(&[F::from(0), F::from(0)]), F::from(9));
+        assert_eq!(poly.evaluate(&[F::from(1), F::from(0)]), F::from(23)); // 9 + 14
+        assert_eq!(poly.evaluate(&[F::from(0), F::from(1)]), F::from(26)); // 9 + 17
+        assert_eq!(poly.evaluate(&[F::from(1), F::from(1)]), F::from(61)); // 9 + 14 + 17 + 21
     }
 
+    // TODO: rewrite
     #[test]
-    fn test_shrink_last_dimensionality() {
-        // Test that shrink_last decrements current_variables
+    fn test_degree() {
+        // For multilinear polynomials, the degree of each variable is always at most 1
         let mut coeffs = HashMap::new();
-        coeffs.insert(create_bitvec(&[0, 0, 0, 0]), F::from(5)); // Constant term in 4-variable poly
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![1, 1, 1], F::from(8)); // xyz term
 
-        let mut poly = MultilinearPolynomial::from_coefficients(coeffs);
-        assert_eq!(poly.num_variables(), 4);
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
-        // Shrink polynomial multiple times
-        assert!(poly.shrink_last(&F::from(2)).is_ok());
-        assert_eq!(poly.num_variables(), 3);
-
-        assert!(poly.shrink_last(&F::from(3)).is_ok());
-        assert_eq!(poly.num_variables(), 2);
-
-        assert!(poly.shrink_last(&F::from(4)).is_ok());
-        assert_eq!(poly.num_variables(), 1);
-
-        // After shrinking the last variable, we should have a constant polynomial
-        assert_eq!(
-            poly.get_coefficient(&create_bitvec(&[0])).unwrap().clone(),
-            F::from(5)
-        );
+        assert_eq!(poly.degree(0), 1); // Degree of x is 1
+        assert_eq!(poly.degree(1), 1); // Degree of y is 1
+        assert_eq!(poly.degree(2), 1); // Degree of z is 1
     }
 
     #[test]
-    fn test_has_no_variables_and_is_zero() {
-        // Zero polynomial
-        let zero_poly = MultilinearPolynomial::<F>::zero(0);
-        assert!(zero_poly.has_no_terms());
-        assert!(zero_poly.has_no_variables());
-
-        // Constant polynomial
-        let mut constant_coeffs = HashMap::new();
-        constant_coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        let mut constant_poly = MultilinearPolynomial::from_coefficients(constant_coeffs);
-        assert!(!constant_poly.has_no_terms());
-        assert!(!constant_poly.has_no_variables()); // Initially not constant because num_variables == 3
-
-        // Shrink to make it truly constant
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(constant_poly.shrink_last(&F::from(1)).is_ok());
-        assert!(!constant_poly.has_no_terms());
-        assert!(constant_poly.has_no_variables()); // Now it is constant
-
-        // Non-constant polynomial
-        let mut non_constant_coeffs = HashMap::new();
-        non_constant_coeffs.insert(create_bitvec(&[0, 0]), F::from(5));
-        non_constant_coeffs.insert(create_bitvec(&[1, 0]), F::from(3));
-        let non_constant_poly = MultilinearPolynomial::from_coefficients(non_constant_coeffs);
-        assert!(!non_constant_poly.has_no_terms());
-        assert!(!non_constant_poly.has_no_variables());
+    #[should_panic(expected = "Out of bounds variable access")]
+    fn test_degree_out_of_bounds() {
+        let poly = MultilinearPolynomial::<F>::zero(2);
+        poly.degree(2); // This should panic - only 2 variables, indices 0 and 1
     }
 
     #[test]
     fn test_sum_over_boolean_hypercube() {
-        // Test a constant polynomial: 5
-        let mut constant_coeffs = HashMap::new();
-        constant_coeffs.insert(create_bitvec(&[0, 0, 0]), F::from(5));
-        let constant_poly = MultilinearPolynomial::from_coefficients(constant_coeffs);
-        // Sum is 5 * 2^3 = 40
-        assert_eq!(constant_poly.sum_over_boolean_hypercube(), F::from(40));
+        // f(x,y) = 1 + 2x + 3y + 4xy
+        let mut coeffs = HashMap::new();
+        coeffs.insert(vec![], F::from(1)); // constant term
+        coeffs.insert(vec![1], F::from(2)); // x term
+        coeffs.insert(vec![0, 1], F::from(3)); // y term
+        coeffs.insert(vec![1, 1], F::from(4)); // xy term
 
-        // Test f(x,y) = x + y
-        let mut linear_coeffs = HashMap::new();
-        linear_coeffs.insert(create_bitvec(&[1, 0]), F::from(1)); // x term
-        linear_coeffs.insert(create_bitvec(&[0, 1]), F::from(1)); // y term
-        let linear_poly = MultilinearPolynomial::from_coefficients(linear_coeffs);
-        // Sum is 1 * (0,1) + 1 * (1,0) + 2 * (1,1) = 4
-        assert_eq!(linear_poly.sum_over_boolean_hypercube(), F::from(4));
+        let evaluations = coeffs_to_evaluations(&coeffs);
+        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
-        // Test f(x,y,z) = xyz (only equals 1 at (1,1,1))
-        let mut product_coeffs = HashMap::new();
-        product_coeffs.insert(create_bitvec(&[1, 1, 1]), F::from(1));
-        let product_poly = MultilinearPolynomial::from_coefficients(product_coeffs);
-        // Sum is 1 at point (1,1,1), 0 elsewhere
-        assert_eq!(product_poly.sum_over_boolean_hypercube(), F::from(1));
+        // Sum over boolean hypercube:
+        // f(0,0) + f(0,1) + f(1,0) + f(1,1) = 1 + 4 + 3 + 10 = 18
+        assert_eq!(poly.sum_over_boolean_hypercube(), F::from(18));
+
+        // Test with a constant polynomial
+        let constant = MultilinearPolynomial::constant(3, F::from(5));
+        // Sum is 5 * 2^3 = 5 * 8 = 40
+        assert_eq!(constant.sum_over_boolean_hypercube(), F::from(40));
     }
 
     #[test]
-    fn test_shrinking_beyond_dimensionality() {
-        // Create a zero polynomial with 1 variable
-        let mut poly = MultilinearPolynomial::zero(1);
+    fn test_shrink_last_error() {
+        // Create a zero polynomial with 0 variables
+        let mut poly = MultilinearPolynomial::<F>::zero(0);
 
-        // First shrink should succeed
-        assert!(poly.shrink_last(&F::from(1)).is_ok());
-        assert_eq!(poly.num_variables(), 0);
-
-        // Second shrink should fail since we have no variables left
+        // Should fail since we have no variables to remove
         assert!(poly.shrink_last(&F::from(2)).is_err());
-        assert_eq!(poly.num_variables(), 0);
-    }
-
-    #[test]
-    #[should_panic(expected = "Invalid value in exponent vector")]
-    fn test_bitvec_creation_with_invalid_value() {
-        // This should panic because multilinear polynomials only allow exponents of 0 or 1
-        create_bitvec(&[0, 2, 0]);
     }
 }

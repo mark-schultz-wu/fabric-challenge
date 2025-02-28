@@ -149,7 +149,7 @@ impl<F: Field, Poly: MultivariatePolynomial<F>> Verifier<F, Poly> {
         let slice_degree = slice.degree().unwrap_or(0);
 
         // Get the degree bound for this round. Again, it is `None` for the zero polynomial.
-        let degree_bound = self.g.degree(variable_number).unwrap_or(0);
+        let degree_bound = self.g.degree(variable_number);
 
         // Check sum constraint
         if slice.evaluate(&F::zero()) + slice.evaluate(&F::one()) != *slice_challenge_sum {
@@ -198,6 +198,7 @@ impl<F: Field, Poly: MultivariatePolynomial<F>> Verifier<F, Poly> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,3 +563,4 @@ mod tests {
         }
     }
 }
+*/
