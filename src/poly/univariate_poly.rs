@@ -1,7 +1,7 @@
 use crate::Field;
 
 /// Represents a univariate polynomial
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnivariatePolynomial<F: Field> {
     /// Coefficients in ascending order of degree
     /// e.g., [2, 3, 1] represents 2 + 3x + x²
@@ -26,11 +26,11 @@ impl<F: Field> UnivariatePolynomial<F> {
     }
 
     /// Evaluates the polynomial at a point
-    pub fn evaluate(&self, point: F) -> F {
+    pub fn evaluate(&self, point: &F) -> F {
         // Horner's method for efficient evaluation
         let mut result = F::zero();
         for coeff in self.coefficients.iter().rev() {
-            result *= &point;
+            result *= point;
             result += coeff;
         }
         result
@@ -104,24 +104,24 @@ mod tests {
     fn test_univariate_polynomial_evaluation() {
         // Test evaluation of constant polynomial
         let constant_poly = UnivariatePolynomial::new(vec![F::from(5)]);
-        assert_eq!(constant_poly.evaluate(F::from(10)), F::from(5));
+        assert_eq!(constant_poly.evaluate(&F::from(10)), F::from(5));
 
         // Test evaluation of linear polynomial: 3 + 2x
         let linear_poly = UnivariatePolynomial::new(vec![F::from(3), F::from(2)]);
-        assert_eq!(linear_poly.evaluate(F::from(0)), F::from(3));
-        assert_eq!(linear_poly.evaluate(F::from(1)), F::from(5));
-        assert_eq!(linear_poly.evaluate(F::from(2)), F::from(7));
+        assert_eq!(linear_poly.evaluate(&F::from(0)), F::from(3));
+        assert_eq!(linear_poly.evaluate(&F::from(1)), F::from(5));
+        assert_eq!(linear_poly.evaluate(&F::from(2)), F::from(7));
 
         // Test evaluation of quadratic polynomial: 1 + 2x + 3x²
         let quadratic_poly = UnivariatePolynomial::new(vec![F::from(1), F::from(2), F::from(3)]);
-        assert_eq!(quadratic_poly.evaluate(F::from(0)), F::from(1));
-        assert_eq!(quadratic_poly.evaluate(F::from(1)), F::from(6));
-        assert_eq!(quadratic_poly.evaluate(F::from(2)), F::from(17)); // 1 + 2*2 + 3*4 = 17
+        assert_eq!(quadratic_poly.evaluate(&F::from(0)), F::from(1));
+        assert_eq!(quadratic_poly.evaluate(&F::from(1)), F::from(6));
+        assert_eq!(quadratic_poly.evaluate(&F::from(2)), F::from(17)); // 1 + 2*2 + 3*4 = 17
 
         // Test evaluation with field arithmetic: 4x² + 2x + 5 at x=3 mod 251
         // 4*3² + 2*3 + 5 = 4*9 + 6 + 5 = 36 + 11 = 47 mod 251
         let poly = UnivariatePolynomial::new(vec![F::from(5), F::from(2), F::from(4)]);
-        assert_eq!(poly.evaluate(F::from(3)), F::from(47));
+        assert_eq!(poly.evaluate(&F::from(3)), F::from(47));
     }
 
     #[test]
@@ -133,13 +133,13 @@ mod tests {
         let poly =
             UnivariatePolynomial::new(vec![F::from(10), F::from(20), F::from(30), F::from(40)]);
 
-        let result: u32 = poly.evaluate(F::from(5)).into();
+        let result: u32 = poly.evaluate(&F::from(5)).into();
         assert_eq!(result, 87); // 5860 % 251 = 87
 
         // Another example with a different point
         // At x=7: 10 + 20*7 + 30*49 + 40*343 = 10 + 140 + 1470 + 13720 = 15340
         // With modulo 251: 15340 % 251 = 29
-        let result2 = poly.evaluate(F::from(7));
+        let result2 = poly.evaluate(&F::from(7));
         assert_eq!(result2, F::from(29));
     }
 
@@ -148,7 +148,7 @@ mod tests {
         // Test that a zero polynomial evaluates to zero everywhere
         let zero_poly = UnivariatePolynomial::<F>::new(vec![F::zero()]);
         for i in 0..10 {
-            assert_eq!(zero_poly.evaluate(F::from(i)), F::zero());
+            assert_eq!(zero_poly.evaluate(&F::from(i)), F::zero());
         }
     }
 
@@ -157,11 +157,11 @@ mod tests {
         // Test evaluation at field elements close to the prime
         let poly = UnivariatePolynomial::new(vec![F::from(250), F::from(1)]);
         // At x=250: 250 + 250 = 500 which is 500 % 251 = 249
-        assert_eq!(poly.evaluate(F::from(250)), F::from(249));
+        assert_eq!(poly.evaluate(&F::from(250)), F::from(249));
 
         // Test polynomial with coefficients spanning the field
         let large_coef_poly = UnivariatePolynomial::new(vec![F::from(0), F::from(1), F::from(250)]);
         // At x=2: 0 + 2 + 250*4 = 2 + 1000 = 1002 % 251 = 249
-        assert_eq!(large_coef_poly.evaluate(F::from(2)), F::from(249));
+        assert_eq!(large_coef_poly.evaluate(&F::from(2)), F::from(249));
     }
 }
