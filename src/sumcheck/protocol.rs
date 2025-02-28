@@ -198,12 +198,10 @@ impl<F: Field, Poly: MultivariatePolynomial<F>> Verifier<F, Poly> {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{GeneralMultivariatePolynomial, MontgomeryFp, MultilinearPolynomial};
-    use bitvec::prelude::*;
     use std::collections::HashMap;
 
     // Using a small prime (251) for testing
@@ -222,32 +220,44 @@ mod tests {
 
     // Helper function to create a multilinear polynomial for testing
     fn create_multilinear_test_polynomial() -> MultilinearPolynomial<F> {
-        // Create a simple multilinear polynomial: f(x,y,z) = 5 + 3xy + 2yz
-        let mut coeffs = HashMap::new();
-        let mut bv = BitVec::new();
+        // Create evaluations for a simple multilinear polynomial with 3 variables f(x,y,z) = 5 + 3xy + 2yz
+        // The boolean hypercube has 2^3 = 8 points
+        // f(0,0,0) = 5
+        // f(0,0,1) = 5
+        // f(0,1,0) = 5
+        // f(0,1,1) = 7  (5 + 2yz = 5 + 2*1*1 = 7)
+        // f(1,0,0) = 5
+        // f(1,0,1) = 5
+        // f(1,1,0) = 8  (5 + 3xy = 5 + 3*1*1 = 8)
+        // f(1,1,1) = 10 (5 + 3xy + 2yz = 5 + 3*1*1 + 2*1*1 = 10)
+        let evaluations = vec![
+            F::from(5),
+            F::from(5),
+            F::from(5),
+            F::from(7),
+            F::from(5),
+            F::from(5),
+            F::from(8),
+            F::from(10),
+        ];
 
-        // [0, 0, 0] - Constant term
-        bv.clear();
-        bv.push(false);
-        bv.push(false);
-        bv.push(false);
-        coeffs.insert(bv.clone(), F::from(5));
+        MultilinearPolynomial::from_evaluations_on_hypercube(evaluations)
+    }
 
-        // [1, 1, 0] - xy term
-        bv.clear();
-        bv.push(true);
-        bv.push(true);
-        bv.push(false);
-        coeffs.insert(bv.clone(), F::from(3));
-
-        // [0, 1, 1] - yz term
-        bv.clear();
-        bv.push(false);
-        bv.push(true);
-        bv.push(true);
-        coeffs.insert(bv.clone(), F::from(2));
-
-        MultilinearPolynomial::from_coefficients(coeffs)
+    // Helper function to run the sumcheck protocol until completion
+    fn run_protocol<F: Field, P: MultivariatePolynomial<F>>(
+        prover: &mut Prover<F, P>,
+        verifier: &mut Verifier<F, P>,
+    ) -> Result<VerifierMessage<F>, ProtocolError> {
+        let mut verifier_msg: VerifierMessage<F> = VerifierMessage::Initial;
+        while matches!(
+            verifier_msg,
+            VerifierMessage::Challenge(_) | VerifierMessage::Initial
+        ) {
+            let prover_msg = prover.message(verifier_msg)?;
+            verifier_msg = verifier.message(prover_msg)?;
+        }
+        Ok(verifier_msg)
     }
 
     #[test]
@@ -258,28 +268,10 @@ mod tests {
         // Create prover and verifier
         let mut prover = Prover::new(poly.clone());
         let mut verifier = Verifier::new(poly, Some(42)); // Use a fixed seed for deterministic testing
-
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // Run the protocol rounds
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            let prover_msg = prover
-                .message(VerifierMessage::Challenge(challenge))
-                .expect("Failed to get prover message");
-            current_verifier_msg = verifier
-                .message(prover_msg)
-                .expect("Failed to process prover message");
-        }
-
-        // Check that the verifier accepted
-        assert_eq!(current_verifier_msg, VerifierMessage::Accept);
+        assert_eq!(
+            run_protocol(&mut prover, &mut verifier).unwrap(),
+            VerifierMessage::Accept
+        );
     }
 
     #[test]
@@ -290,28 +282,10 @@ mod tests {
         // Create prover and verifier
         let mut prover = Prover::new(poly.clone());
         let mut verifier = Verifier::new(poly, Some(42)); // Use a fixed seed for deterministic testing
-
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // Run the protocol rounds
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            let prover_msg = prover
-                .message(VerifierMessage::Challenge(challenge))
-                .expect("Failed to get prover message");
-            current_verifier_msg = verifier
-                .message(prover_msg)
-                .expect("Failed to process prover message");
-        }
-
-        // Check that the verifier accepted
-        assert_eq!(current_verifier_msg, VerifierMessage::Accept);
+        assert_eq!(
+            run_protocol(&mut prover, &mut verifier).unwrap(),
+            VerifierMessage::Accept
+        );
     }
 
     #[test]
@@ -326,48 +300,10 @@ mod tests {
         let mut prover = Prover::new(dishonest_poly);
         let mut verifier = Verifier::new(poly, Some(42)); // Verifier uses the original polynomial
 
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // Run the protocol rounds
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            match prover.message(VerifierMessage::Challenge(challenge)) {
-                Ok(prover_msg) => {
-                    current_verifier_msg = verifier
-                        .message(prover_msg)
-                        .expect("Failed to process prover message");
-
-                    // If the verifier rejected, we're done
-                    if let VerifierMessage::Reject(_) = current_verifier_msg {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    // If the prover errors, we'll count that as a rejection
-                    current_verifier_msg =
-                        VerifierMessage::Reject(String::from("The prover has errored"));
-                    break;
-                }
-            }
-        }
-        // Check that the verifier rejected
-        match current_verifier_msg {
-            VerifierMessage::Reject(_) => {
-                // Test passes - we got a rejection as expected
-            }
-            _ => {
-                panic!(
-                    "Expected a Reject message but got {:?}",
-                    current_verifier_msg
-                );
-            }
-        }
+        assert!(matches!(
+            run_protocol(&mut prover, &mut verifier).expect("Protocol execution failed"),
+            VerifierMessage::Reject(_)
+        ));
     }
 
     #[test]
@@ -425,36 +361,11 @@ mod tests {
 
         let mut prover = Prover::new(zero_poly.clone());
         let mut verifier = Verifier::new(zero_poly, Some(42));
-
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-
-        // Extract the sum value and check
-        if let ProverMessage::InitialMessage(claimed_sum, _) = prover_msg {
-            assert_eq!(claimed_sum, F::zero());
-        } else {
-            panic!("Unexpected prover message");
-        }
-
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // Run the protocol rounds
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            let prover_msg = prover
-                .message(VerifierMessage::Challenge(challenge))
-                .expect("Failed to get prover message");
-            current_verifier_msg = verifier
-                .message(prover_msg)
-                .expect("Failed to process prover message");
-        }
-
-        // Check that the verifier accepted
-        assert_eq!(current_verifier_msg, VerifierMessage::Accept);
+        assert_eq!(prover.shrunk_g.sum_over_boolean_hypercube(), F::zero());
+        assert_eq!(
+            run_protocol(&mut prover, &mut verifier).unwrap(),
+            VerifierMessage::Accept
+        );
     }
 
     #[test]
@@ -471,40 +382,9 @@ mod tests {
         // Create prover with poly1 and verifier with poly2
         let mut prover = Prover::new(poly1);
         let mut verifier = Verifier::new(poly2, Some(42));
-
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // Run the protocol rounds until error or rejection
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            match prover.message(VerifierMessage::Challenge(challenge)) {
-                Ok(prover_msg) => {
-                    current_verifier_msg = verifier
-                        .message(prover_msg)
-                        .expect("Failed to process prover message");
-
-                    // If the verifier rejected, we're done
-                    if let VerifierMessage::Reject(_) = current_verifier_msg {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    // If the prover errors, we'll count that as a rejection
-                    current_verifier_msg = VerifierMessage::Reject(String::from("Prover Errored"));
-                    break;
-                }
-            }
-        }
-
-        // Check that the protocol did not succeed
-        // Either rejected or errored due to the mismatch
-        assert_ne!(current_verifier_msg, VerifierMessage::Accept);
+        let result = run_protocol(&mut prover, &mut verifier);
+        // Check that the protocol either errors, or specifically rejects.
+        assert!(result.is_err() || matches!(result.as_ref().unwrap(), VerifierMessage::Reject(_)));
     }
 
     #[test]
@@ -519,48 +399,8 @@ mod tests {
         let mut prover = Prover::new(dishonest_poly);
         let mut verifier = Verifier::new(honest_poly, Some(42));
 
-        // Initialize the protocol
-        let prover_msg = prover
-            .message(VerifierMessage::Initial)
-            .expect("Failed to get initial message");
-        let verifier_msg = verifier
-            .message(prover_msg)
-            .expect("Failed to process initial message");
-
-        // The verifier should reject due to degree constraint violation
-        let mut current_verifier_msg = verifier_msg;
-        while let VerifierMessage::Challenge(challenge) = current_verifier_msg {
-            match prover.message(VerifierMessage::Challenge(challenge)) {
-                Ok(prover_msg) => {
-                    current_verifier_msg = verifier
-                        .message(prover_msg)
-                        .expect("Failed to process prover message");
-
-                    // If the verifier rejected, we're done
-                    if let VerifierMessage::Reject(_) = current_verifier_msg {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    // If the prover errors, we'll count that as a rejection
-                    current_verifier_msg = VerifierMessage::Reject(String::from("Prover Errored"));
-                    break;
-                }
-            }
-        }
-
-        // Check that the verifier rejected
-        match current_verifier_msg {
-            VerifierMessage::Reject(_) => {
-                // Test passes - we got a rejection as expected
-            }
-            _ => {
-                panic!(
-                    "Expected a Reject message but got {:?}",
-                    current_verifier_msg
-                );
-            }
-        }
+        let result = run_protocol(&mut prover, &mut verifier);
+        // Check that the protocol either errors, or specifically rejects.
+        assert!(result.is_err() || matches!(result.as_ref().unwrap(), VerifierMessage::Reject(_)));
     }
 }
-*/
