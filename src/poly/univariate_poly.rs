@@ -37,15 +37,17 @@ impl<F: Field> UnivariatePolynomial<F> {
     }
 
     /// Returns the degree of the polynomial
-    pub fn degree(&self) -> Option<usize> {
+    ///
+    /// Zero polynomial has degree 0 to simplify things.
+    pub fn degree(&self) -> usize {
         for (i, v) in self.coefficients.iter().enumerate().rev() {
             if v.is_zero() {
                 continue;
             } else {
-                return Some(i);
+                return i;
             }
         }
-        None
+        0
     }
 }
 
@@ -84,20 +86,20 @@ mod tests {
     fn test_univariate_polynomial_degree() {
         // Test degree of zero polynomial
         let zero_poly = UnivariatePolynomial::<F>::new(vec![F::zero()]);
-        assert_eq!(zero_poly.degree(), None);
+        assert_eq!(zero_poly.degree(), 0);
 
         // Test degree of constant polynomial
         let constant_poly = UnivariatePolynomial::new(vec![F::from(5)]);
-        assert_eq!(constant_poly.degree(), Some(0));
+        assert_eq!(constant_poly.degree(), 0);
 
         // Test degree of linear polynomial
         let linear_poly = UnivariatePolynomial::new(vec![F::from(3), F::from(2)]);
-        assert_eq!(linear_poly.degree(), Some(1));
+        assert_eq!(linear_poly.degree(), 1);
 
         // Test degree of higher-degree polynomial
         let cubic_poly =
             UnivariatePolynomial::new(vec![F::from(1), F::from(2), F::from(3), F::from(4)]);
-        assert_eq!(cubic_poly.degree(), Some(3));
+        assert_eq!(cubic_poly.degree(), 3);
     }
 
     #[test]

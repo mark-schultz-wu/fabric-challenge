@@ -145,8 +145,7 @@ impl<F: Field, Poly: MultivariatePolynomial<F>> Verifier<F, Poly> {
             .ok_or(ProtocolError::ProcessMessageInWrongOrder)?;
 
         // Get the degree of the univariate slice
-        // If it's None, that means we have a zero polynomial, which should have degree 0
-        let slice_degree = slice.degree().unwrap_or(0);
+        let slice_degree = slice.degree();
 
         // Get the degree bound for this round. Again, it is `None` for the zero polynomial.
         let degree_bound = self.g.degree(variable_number);
