@@ -1,6 +1,5 @@
-use super::traits::ShrinkError;
-use crate::poly::MultivariatePolynomial;
-use crate::poly::UnivariatePolynomial;
+use crate::poly::traits::ShrinkError;
+use crate::poly::{GeneralMultivariatePolynomial, MultivariatePolynomial, UnivariatePolynomial};
 use crate::Field;
 
 /// A multilinear polynomial representation using evaluations on the boolean hypercube
@@ -50,6 +49,65 @@ impl<F: Field> MultilinearPolynomial<F> {
             evaluations,
             current_variables,
         }
+    }
+    /// Converts from a general polynomial g to a multilinear polynomial
+    /// that agrees with g on any x \in \{0,1\}^n, e.g. compute
+    /// g's multilinear extension.
+    pub fn from_general_polynomial(poly: &GeneralMultivariatePolynomial<F>) -> Self {
+        let coeffs = &poly.coefficients;
+        // Infer number of variables from the coefficient map
+        let num_vars = coeffs.keys().map(|exps| exps.len()).max().unwrap_or(0);
+
+        // If no variables, just return the zero polynomial
+        if num_vars == 0 {
+            return Self::zero(num_vars);
+        }
+
+        let mut evals = vec![F::zero(); 1 << num_vars];
+
+        // Iterate through all possible evaluation points in the boolean hypercube
+        #[allow(clippy::needless_range_loop)]
+        for point_idx in 0..(1 << num_vars) {
+            let mut eval = F::zero();
+
+            // For each monomial with its coefficient
+            for (exponents, coeff) in coeffs.iter() {
+                let mut padded_exponents = exponents.clone();
+                // Pad the exponents vector if needed
+                if padded_exponents.len() < num_vars {
+                    padded_exponents.resize(num_vars, 0);
+                }
+
+                // Calculate monomial value for this point on the boolean cube
+                let mut term_value = coeff.clone();
+
+                // Check each variable's contribution
+                for i in 0..num_vars {
+                    if padded_exponents[i] > 0 {
+                        // Variable has a non-zero exponent
+                        // Check if this bit is set in point_idx
+                        // The MSB corresponds to variable 0, LSB to variable num_vars-1
+                        let bit_pos = num_vars - 1 - i;
+                        let var_bit = (point_idx >> bit_pos) & 1;
+
+                        if var_bit == 0 {
+                            // If any variable with non-zero exponent is zero, the whole term is zero
+                            term_value = F::zero();
+                            break;
+                        }
+                        // If var_bit is 1, it doesn't matter what the exponent is on the boolean cube
+                    }
+                    // If exponent is 0, the variable doesn't contribute (x^0 = 1)
+                }
+
+                // Add the term's value to the evaluation
+                eval += term_value;
+            }
+
+            evals[point_idx] = eval;
+        }
+
+        Self::from_evaluations_on_hypercube(evals)
     }
 }
 
@@ -187,66 +245,6 @@ mod tests {
     // Using a small prime (251) for testing
     type F = MontgomeryFp<251>;
 
-    // Helper function to convert coefficient representation to evaluations on boolean hypercube
-    fn coeffs_to_evaluations<F: Field>(coeffs: &HashMap<Vec<usize>, F>) -> Vec<F> {
-        // Infer number of variables from the coefficient map
-        let num_vars = if coeffs.is_empty() {
-            0
-        } else {
-            coeffs.keys().map(|exps| exps.len()).max().unwrap_or(0)
-        };
-
-        // If no variables, just return the constant term or zero
-        if num_vars == 0 {
-            return vec![coeffs.get(&vec![]).cloned().unwrap_or_else(F::zero)];
-        }
-
-        let mut evals = vec![F::zero(); 1 << num_vars];
-
-        // Iterate through all possible evaluation points in the boolean hypercube
-        for point_idx in 0..(1 << num_vars) {
-            let mut eval = F::zero();
-
-            // For each monomial with its coefficient
-            for (exponents, coeff) in coeffs.iter() {
-                let mut padded_exponents = exponents.clone();
-                // Pad the exponents vector if needed
-                if padded_exponents.len() < num_vars {
-                    padded_exponents.resize(num_vars, 0);
-                }
-
-                // Calculate monomial value for this point on the boolean cube
-                let mut term_value = coeff.clone();
-
-                // Check each variable's contribution
-                for i in 0..num_vars {
-                    if padded_exponents[i] > 0 {
-                        // Variable has a non-zero exponent
-                        // Check if this bit is set in point_idx
-                        // The MSB corresponds to variable 0, LSB to variable num_vars-1
-                        let bit_pos = num_vars - 1 - i;
-                        let var_bit = (point_idx >> bit_pos) & 1;
-
-                        if var_bit == 0 {
-                            // If any variable with non-zero exponent is zero, the whole term is zero
-                            term_value = F::zero();
-                            break;
-                        }
-                        // If var_bit is 1, it doesn't matter what the exponent is on the boolean cube
-                    }
-                    // If exponent is 0, the variable doesn't contribute (x^0 = 1)
-                }
-
-                // Add the term's value to the evaluation
-                eval += term_value;
-            }
-
-            evals[point_idx] = eval;
-        }
-
-        evals
-    }
-
     #[test]
     fn test_from_evaluations() {
         // f(x,y) = 1 + 2x + 3y + 4xy
@@ -255,20 +253,20 @@ mod tests {
         coeffs.insert(vec![1], F::from(2)); // x term
         coeffs.insert(vec![0, 1], F::from(3)); // y term
         coeffs.insert(vec![1, 1], F::from(4)); // xy term
+        let poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
 
-        let evaluations = coeffs_to_evaluations(&coeffs);
+        assert_eq!(poly.num_variables(), 2);
+
+        let mle = MultilinearPolynomial::<F>::from_general_polynomial(&poly);
         // Evaluations should be:
         // f(0,0) = 1
         // f(0,1) = 1 + 3 = 4
         // f(1,0) = 1 + 2 = 3
         // f(1,1) = 1 + 2 + 3 + 4 = 10
         assert_eq!(
-            evaluations,
+            mle.evaluations,
             vec![F::from(1), F::from(4), F::from(3), F::from(10)]
         );
-
-        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
-        assert_eq!(poly.num_variables(), 2);
     }
 
     #[test]
@@ -298,9 +296,8 @@ mod tests {
         coeffs.insert(vec![1], F::from(2)); // x term
         coeffs.insert(vec![0, 1], F::from(3)); // y term
         coeffs.insert(vec![1, 1], F::from(4)); // xy term
-
-        let evaluations = coeffs_to_evaluations(&coeffs);
-        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
+        let poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::<F>::from_general_polynomial(&poly);
 
         // Evaluate at (0,0): 1
         let result1 = poly.evaluate(&[F::from(0), F::from(0)]);
@@ -340,9 +337,8 @@ mod tests {
         coeffs.insert(vec![1], F::from(2)); // x term
         coeffs.insert(vec![0, 1], F::from(3)); // y term
         coeffs.insert(vec![1, 1], F::from(4)); // xy term
-
-        let evaluations = coeffs_to_evaluations(&coeffs);
-        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
+        let gen_poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
+        let poly = MultilinearPolynomial::<F>::from_general_polynomial(&gen_poly);
 
         // The univariate slice in y should be:
         // g(y) = sum_{x in {0,1}} f(x,y)
@@ -367,9 +363,8 @@ mod tests {
         coeffs.insert(vec![1, 0, 1], F::from(6)); // xz term
         coeffs.insert(vec![0, 1, 1], F::from(7)); // yz term
         coeffs.insert(vec![1, 1, 1], F::from(8)); // xyz term
-
-        let evaluations = coeffs_to_evaluations(&coeffs);
-        let mut poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
+        let gen_poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
+        let mut poly = MultilinearPolynomial::<F>::from_general_polynomial(&gen_poly);
 
         // Substitute z = 2
         assert!(poly.shrink_last(&F::from(2)).is_ok());
@@ -396,8 +391,10 @@ mod tests {
         coeffs.insert(vec![1], F::from(2)); // x term
         coeffs.insert(vec![0, 1], F::from(3)); // y term
         coeffs.insert(vec![1, 1, 1], F::from(8)); // xyz term
+        let poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
+        let mle = MultilinearPolynomial::<F>::from_general_polynomial(&poly);
+        let evaluations = mle.evaluations;
 
-        let evaluations = coeffs_to_evaluations(&coeffs);
         let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
 
         assert_eq!(poly.degree(0), 1); // Degree of x is 1
@@ -420,9 +417,7 @@ mod tests {
         coeffs.insert(vec![1], F::from(2)); // x term
         coeffs.insert(vec![0, 1], F::from(3)); // y term
         coeffs.insert(vec![1, 1], F::from(4)); // xy term
-
-        let evaluations = coeffs_to_evaluations(&coeffs);
-        let poly = MultilinearPolynomial::from_evaluations_on_hypercube(evaluations);
+        let poly = GeneralMultivariatePolynomial::<F>::from_coefficients(coeffs);
 
         // Sum over boolean hypercube:
         // f(0,0) + f(0,1) + f(1,0) + f(1,1) = 1 + 4 + 3 + 10 = 18

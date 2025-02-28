@@ -1,5 +1,4 @@
-use crate::poly::MultivariatePolynomial;
-use crate::poly::UnivariatePolynomial;
+use crate::poly::{MultilinearPolynomial, MultivariatePolynomial, UnivariatePolynomial};
 use crate::Field;
 use std::collections::HashMap;
 
@@ -11,7 +10,7 @@ pub struct GeneralMultivariatePolynomial<F: Field> {
     /// Maps exponent vectors to coefficients
     /// Each key is a vector of exponents, one for each variable
     /// e.g., [1, 0, 2] represents x0^1 * x2^2
-    coefficients: HashMap<Vec<usize>, F>,
+    pub(crate) coefficients: HashMap<Vec<usize>, F>,
 
     /// Maximum number of variables in the polynomial (constant after creation)
     max_variables: usize,
@@ -86,6 +85,13 @@ impl<F: Field> GeneralMultivariatePolynomial<F> {
             max_variables: num_variables,
             current_variables: num_variables,
         }
+    }
+    /// Computes the multilinear extension of this polynomial
+    ///
+    /// Returns the unique multilinear polynomial that agrees with this
+    /// polynomial on all points of the boolean hypercube {0,1}^n.
+    pub fn to_multilinear(&self) -> MultilinearPolynomial<F> {
+        MultilinearPolynomial::from_general_polynomial(self)
     }
 }
 
