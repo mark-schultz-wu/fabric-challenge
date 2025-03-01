@@ -67,6 +67,16 @@ impl<F: Field> GeneralMultivariatePolynomial<F> {
         }
     }
 
+    /// Returns the number of non-zero terms in the polynomial
+    pub fn num_terms(&self) -> usize {
+        self.coefficients.len()
+    }
+
+    /// Returns an iterator over (exponent_vec, coefficient) pairs
+    pub fn terms(&self) -> impl Iterator<Item = (&Vec<usize>, &F)> {
+        self.coefficients.iter()
+    }
+
     /// Gets the coefficient for a given exponent vector, if it exists
     pub fn get_coefficient(&self, exponents: &[usize]) -> Option<&F> {
         if exponents.len() > self.max_variables {

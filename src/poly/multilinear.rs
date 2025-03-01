@@ -109,6 +109,33 @@ impl<F: Field> MultilinearPolynomial<F> {
 
         Self::from_evaluations_on_hypercube(evals)
     }
+    /// Returns the number of evaluations (should be 2^num_variables)
+    pub fn num_evaluations(&self) -> usize {
+        self.evaluations.len()
+    }
+
+    /// Returns an iterator over the evaluations in lexographic order
+    pub fn evaluations(&self) -> impl Iterator<Item = &F> {
+        self.evaluations.iter()
+    }
+
+    /// Returns an iterator over (point, evaluation) pairs, where points are boolean vectors
+    pub fn evaluation_pairs(&self) -> impl Iterator<Item = (Vec<F>, &F)> + '_ {
+        let n = self.current_variables;
+        (0..self.evaluations.len()).map(move |idx| {
+            // Convert index to boolean vector representing the point
+            let point: Vec<F> = (0..n)
+                .map(|bit_pos| {
+                    if (idx >> bit_pos) & 1 == 1 {
+                        F::one()
+                    } else {
+                        F::zero()
+                    }
+                })
+                .collect();
+            (point, &self.evaluations[idx])
+        })
+    }
 }
 
 impl<F: Field> MultivariatePolynomial<F> for MultilinearPolynomial<F> {

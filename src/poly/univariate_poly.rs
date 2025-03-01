@@ -6,7 +6,7 @@ use std::fmt;
 pub struct UnivariatePolynomial<F: Field> {
     /// Coefficients in ascending order of degree
     /// e.g., [2, 3, 1] represents 2 + 3x + x²
-    pub coefficients: Vec<F>,
+    pub(crate) coefficients: Vec<F>,
 }
 
 impl<F: Field + fmt::Display> fmt::Display for UnivariatePolynomial<F> {
