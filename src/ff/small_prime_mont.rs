@@ -69,13 +69,16 @@ impl<const P: u32> Field for MontgomeryFp<P> {
     fn is_zero(&self) -> bool {
         self.0 == 0
     }
+
     /// Uniform sampling
     fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
-        let mut buff: [u8; 4] = [0; 4];
-        // Rejection sample to ensure exactly uniform sample
+        // Mask for the relevant bits for our comparison
+        let num_bits = P.ilog2() + 1;
+        let mask = (1u32 << num_bits) - 1;
+        let mut buff = [0u8; 4];
         loop {
             rng.fill_bytes(&mut buff);
-            let val = u32::from_be_bytes(buff);
+            let val = u32::from_be_bytes(buff) & mask;
             if val < P {
                 return val.into();
             }
