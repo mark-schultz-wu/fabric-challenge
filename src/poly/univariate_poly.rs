@@ -1,4 +1,5 @@
 use crate::Field;
+use std::fmt;
 
 /// Represents a univariate polynomial
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +7,32 @@ pub struct UnivariatePolynomial<F: Field> {
     /// Coefficients in ascending order of degree
     /// e.g., [2, 3, 1] represents 2 + 3x + x²
     pub coefficients: Vec<F>,
+}
+
+impl<F: Field + fmt::Display> fmt::Display for UnivariatePolynomial<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut terms = Vec::new();
+
+        for (i, coeff) in self.coefficients.iter().enumerate() {
+            if coeff.is_zero() {
+                continue;
+            }
+
+            let term = match i {
+                0 => format!("{}", coeff),
+                1 => format!("{}*x", coeff),
+                _ => format!("{}*x^{}", coeff, i),
+            };
+
+            terms.push(term);
+        }
+
+        if terms.is_empty() {
+            write!(f, "0")
+        } else {
+            write!(f, "{}", terms.join(" + "))
+        }
+    }
 }
 
 impl<F: Field> UnivariatePolynomial<F> {

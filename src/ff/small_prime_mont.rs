@@ -35,6 +35,13 @@ impl<const P: u32> fmt::Debug for MontgomeryFp<P> {
     }
 }
 
+impl<const P: u32> fmt::Display for MontgomeryFp<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let standard_value: u32 = (*self).into();
+        write!(f, "{}", standard_value)
+    }
+}
+
 impl<const P: u32> Field for MontgomeryFp<P> {
     fn zero() -> Self {
         Self(0)

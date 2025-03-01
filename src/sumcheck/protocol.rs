@@ -37,6 +37,29 @@ pub enum ProverMessage<F: Field> {
     OtherMessage(UnivariatePolynomial<F>),
 }
 
+impl<F: Field> ProverMessage<F> {
+    /// Gets the univariate polynomial contained in the message
+    pub fn get_polynomial(&self) -> &UnivariatePolynomial<F> {
+        match self {
+            ProverMessage::InitialMessage(_, poly) => poly,
+            ProverMessage::OtherMessage(poly) => poly,
+        }
+    }
+
+    /// Gets the claimed sum if this is an initial message
+    pub fn get_claimed_sum(&self) -> Option<&F> {
+        match self {
+            ProverMessage::InitialMessage(sum, _) => Some(sum),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this is an initial message
+    pub fn is_initial(&self) -> bool {
+        matches!(self, ProverMessage::InitialMessage(_, _))
+    }
+}
+
 impl<F: Field, Poly: MultivariatePolynomial<F>> Prover<F, Poly> {
     /// Constructs a new prover
     pub fn new(g: Poly) -> Self {
@@ -106,6 +129,29 @@ pub enum VerifierMessage<F: Field> {
     Accept,
     /// Message sent when the verifier rejects, as well as a reason for rejecting
     Reject(String),
+}
+
+impl<F: Field> VerifierMessage<F> {
+    /// Gets the challenge value if this is a Challenge message
+    pub fn get_challenge(&self) -> Option<&F> {
+        match self {
+            VerifierMessage::Challenge(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this message represents acceptance
+    pub fn is_accept(&self) -> bool {
+        matches!(self, VerifierMessage::Accept)
+    }
+
+    /// Returns the rejection reason if this is a Reject message
+    pub fn rejection_reason(&self) -> Option<&str> {
+        match self {
+            VerifierMessage::Reject(reason) => Some(reason),
+            _ => None,
+        }
+    }
 }
 
 impl<F: Field, Poly: MultivariatePolynomial<F>> Verifier<F, Poly> {
