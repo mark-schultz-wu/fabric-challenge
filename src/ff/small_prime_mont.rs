@@ -4,6 +4,7 @@
 use crate::ff::traits::Field;
 use rand_core::{CryptoRng, RngCore};
 use std::convert::From;
+use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// Computes -a^(-1) mod 2^32 using the Newton-Raphson method
@@ -22,8 +23,17 @@ pub const fn mont_neg_inv(a: u32) -> u32 {
 /// A prime finite field relative to a prime p <= 2^31, implemented with Montgomery arithmetic
 ///
 /// Note: Not currently fully constant-time, though this would not be hard to achieve.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct MontgomeryFp<const P: u32>(u32);
+
+/// Debug implementation using the standard representation rather than the
+/// Montgomery representation
+impl<const P: u32> fmt::Debug for MontgomeryFp<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let standard_value: u32 = (*self).into();
+        write!(f, "Fp({} mod {})", standard_value, P)
+    }
+}
 
 impl<const P: u32> Field for MontgomeryFp<P> {
     fn zero() -> Self {
@@ -564,5 +574,11 @@ mod large_prime_tests {
         // Verify one() returns correct Montgomery form
         let one = MontgomeryFp::<PRIME_30BIT>::one();
         assert_eq!(one, 1.into());
+    }
+
+    #[test]
+    fn test_montgomery_fp_debug() {
+        let value = MontgomeryFp::<17>::from(5);
+        assert_eq!(format!("{:?}", value), "Fp(5 mod 17)");
     }
 }
